@@ -1,0 +1,1215 @@
+// This is your Prisma schema file
+// Learn more: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ============================================
+// AUTHENTICATION (Better Auth)
+// ============================================
+
+model User {
+  id            String    @id @default(cuid())
+  email         String    @unique
+  name          String?
+  firstName     String?
+  lastName      String?
+  image         String?
+  phone         String?
+  role          String    @default("STUDENT") // ADMIN, EXECUTIVE_CHEF, MENTOR, PROFESSOR, STUDENT
+  active        Boolean   @default(true)
+  emailVerified Boolean   @default(false)
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  // Relations 1:1 (role-specific profiles)
+  admin         Admin?
+  executiveChef ExecutiveChef?
+  mentor        Mentor?
+  professor     Professor?
+  student       Student?
+
+  // Better Auth relations
+  accounts      Account[]
+  sessions      Session[]
+
+  // Other relations
+  createdEvents        CalendarEvent[]       @relation("EventCreator")
+  documents            Document[]            @relation("DocumentOwner")
+  documentPermissions  DocumentPermission[]
+  folderPermissions    FolderPermission[]
+  notifications        Notification[]
+  auditLogs            AuditLog[]
+  messagesCreated      Message[]             @relation("MessageCreator")
+  conversationParticipants ConversationParticipant[]
+  
+  // Comptabilité
+  paymentsReceived     Payment[]             @relation("ReceivedBy")
+  founderDistributions FounderDistribution[]
+  debtsFrom            InternalDebt[]        @relation("FromDebt")
+  debtsTo              InternalDebt[]        @relation("ToDebt")
+  
+  // Documents Library
+  documentLibrariesCreated DocumentLibrary[] @relation("DocumentLibraryCreator")
+
+  @@index([email])
+  @@index([role])
+  @@index([active])
+}
+
+model Account {
+  id                String   @id @default(cuid())
+  userId            String
+  accountId         String
+  providerId        String
+  accessToken       String?
+  refreshToken      String?
+  accessTokenExpiresAt DateTime?
+  refreshTokenExpiresAt DateTime?
+  scope             String?
+  idToken           String?
+  password          String?
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
+
+model Session {
+  id        String   @id @default(cuid())
+  userId    String
+  token     String   @unique
+  expiresAt DateTime
+  ipAddress String?
+  userAgent String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
+
+model Verification {
+  id         String   @id @default(cuid())
+  identifier String
+  value      String
+  expiresAt  DateTime
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@index([identifier])
+}
+
+// ============================================
+// ROLE-SPECIFIC PROFILES
+// ============================================
+
+model Admin {
+  id        String   @id @default(cuid())
+  userId    String   @unique
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model ExecutiveChef {
+  id        String   @id @default(cuid())
+  userId    String   @unique
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user    User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  mentors Mentor[]
+}
+
+model Mentor {
+  id               String   @id @default(cuid())
+  userId           String   @unique
+  executiveChefId  String?
+  specialties      String[] // Array of specialties
+  bio              String?
+  hourlyRate       Int?     // In cents
+  paymentType      String   @default("MONTHLY") // MONTHLY, PER_MISSION
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  user          User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  executiveChef ExecutiveChef? @relation(fields: [executiveChefId], references: [id])
+  students      Student[]
+  
+  // Comptabilité
+  paymentSchedules PaymentSchedule[]
+  payments         Payment[]
+
+  @@index([executiveChefId])
+}
+
+model Professor {
+  id           String   @id @default(cuid())
+  userId       String   @unique
+  type         String   // QUANT, VERBAL
+  hourlyRate   Int?     // In cents
+  availability Json?    // JSON with availability slots
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  user              User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  studentsQuant     Student[]       @relation("ProfessorQuant")
+  studentsVerbal    Student[]       @relation("ProfessorVerbal")
+  calendarEvents    CalendarEvent[]
+  
+  // Comptabilité
+  paymentSchedules  PaymentSchedule[]
+  payments          Payment[]
+
+  @@index([type])
+}
+
+// ============================================
+// STUDENT & PACKS
+// ============================================
+
+model Student {
+  id                 String    @id @default(cuid())
+  userId             String    @unique
+  dateOfBirth        DateTime?
+  nationality        String?
+  currentFormation   String?
+  linkedinUrl        String?
+  programType        String    @default("MASTER") // MASTER, BACHELOR
+  mentorId           String?
+  professorQuantId   String?
+  professorVerbalId  String?
+  rootFolderId       String?
+  internalNotes      String?   @db.Text
+  status             String    @default("EN_DEMARRAGE") // EN_DEMARRAGE, EN_COURS, FINALISE, SUSPENDU, EN_PAUSE
+  startDate          DateTime?
+  plannedEndDate     DateTime?
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
+
+  user           User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  mentor         Mentor?    @relation(fields: [mentorId], references: [id])
+  professorQuant Professor? @relation("ProfessorQuant", fields: [professorQuantId], references: [id])
+  professorVerbal Professor? @relation("ProfessorVerbal", fields: [professorVerbalId], references: [id])
+  rootFolder     Folder?    @relation("StudentRootFolder", fields: [rootFolderId], references: [id])
+
+  // Relations
+  packs              StudentPack[]
+  schools            StudentSchool[]
+  schoolApplications StudentSchoolApplication[]
+  calendarEvents     CalendarEvent[]
+  tasks              Task[]
+  essays             Essay[]
+  essayResponses     EssayResponse[]
+  testScores         TestScore[]
+  conversations      Conversation[]
+  academicExperiences StudentAcademicExperience[]
+  workExperiences    StudentWorkExperience[]
+  cvVersions         CVVersion[]
+  oralSimulations    OralSimulation[]
+  
+  // Comptabilité
+  quotes             Quote[]
+  paymentSchedules   PaymentSchedule[]
+  payments           Payment[]
+  expenses           Expense[]
+
+  @@index([mentorId])
+  @@index([professorQuantId])
+  @@index([professorVerbalId])
+  @@index([status])
+  @@index([programType])
+}
+
+model Pack {
+  id             String   @id @default(cuid())
+  name           String   @unique // Unique identifier (ex: PACK_ELITE_PREP)
+  displayName    String   // Display name (ex: "Elite Prep")
+  description    String?  @db.Text
+  price          Int      // Base price in cents (reference only)
+  geography      String?  // France, UK, etc. (optional)
+  isAddon        Boolean  @default(false)
+  folderTemplate Json?    // JSON folder structure template
+  active         Boolean  @default(true)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  students          StudentPack[]
+  libraryDocuments  DocumentLibraryPack[]
+  templateDocuments DocumentTemplatePack[]
+  templates         DocumentTemplate[]
+
+  @@index([geography])
+  @@index([isAddon])
+  @@index([active])
+}
+
+model StudentPack {
+  id              String    @id @default(cuid())
+  studentId       String
+  packId          String
+  config          Json?     // Configuration (testType, geography, etc.)
+  customPrice     Int       // Personalized price in cents (REQUIRED)
+  progressPercent Int       @default(0) // 0-100
+  startDate       DateTime  @default(now())
+  endDate         DateTime?
+  status          String    @default("active") // active, completed, cancelled, on_hold
+  notes           String?   @db.Text
+  servicesIncluded String?  @db.Text
+  comments        String?   @db.Text
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  pack               Pack                       @relation(fields: [packId], references: [id])
+  student            Student                    @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  schoolApplications StudentSchoolApplication[]
+  quoteItems         QuoteItem[]
+
+  @@unique([studentId, packId])
+  @@index([studentId])
+  @@index([packId])
+  @@index([status])
+}
+
+// ============================================
+// SCHOOLS & PROGRAMS
+// ============================================
+
+model School {
+  id          String   @id @default(cuid())
+  name        String   // HEC Paris, ESSEC, etc.
+  country     String   // France, UK, Italy, etc.
+  city        String?
+  website     String?
+  logoUrl     String?
+  description String?  @db.Text
+  active      Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  programs       SchoolProgram[]
+  applications   StudentSchoolApplication[]
+  essays         Essay[]
+  essayQuestions EssayQuestion[]
+  studentSchools StudentSchool[]
+
+  @@index([country])
+  @@index([active])
+  @@index([name])
+}
+
+model SchoolProgram {
+  id          String   @id @default(cuid())
+  schoolId    String
+  name        String   // Master in Management (MiM), Master in Finance (MIF)
+  type        String   // MiM, MIF, MSc, MBA, Bachelor
+  duration    String?  // 2 years, 1 year
+  degree      String?  // Master, Bachelor
+  active      Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  school         School                     @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+  applications   StudentSchoolApplication[]
+  essays         Essay[]
+  essayQuestions EssayQuestion[]
+  studentSchools StudentSchool[]
+
+  @@index([schoolId])
+  @@index([active])
+  @@index([type])
+}
+
+model StudentSchool {
+  id        String   @id @default(cuid())
+  studentId String
+  schoolId  String
+  programId String?
+  priority  Int      // Order of preference (1 = first priority)
+  status    String   @default("TARGET") // TARGET, APPLIED, INTERVIEW, ADMITTED, REJECTED, WAITLISTED
+  notes     String?  @db.Text
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  student Student        @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  school  School         @relation(fields: [schoolId], references: [id])
+  program SchoolProgram? @relation(fields: [programId], references: [id])
+
+  @@unique([studentId, schoolId, programId])
+  @@index([studentId])
+  @@index([schoolId])
+  @@index([programId])
+  @@index([status])
+  @@index([priority])
+}
+
+model StudentSchoolApplication {
+  id            String    @id @default(cuid())
+  studentId     String
+  schoolId      String
+  programId     String
+  studentPackId String?
+  priority      Int       // Order of preference
+  status        String    @default("interested") // interested, in_progress, submitted, interview, admitted, rejected
+  submittedAt   DateTime?
+  notes         String?   @db.Text
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  student     Student        @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  program     SchoolProgram  @relation(fields: [programId], references: [id])
+  school      School         @relation(fields: [schoolId], references: [id])
+  studentPack StudentPack?   @relation(fields: [studentPackId], references: [id])
+
+  @@unique([studentId, programId])
+  @@index([studentId])
+  @@index([schoolId])
+  @@index([programId])
+  @@index([studentPackId])
+  @@index([status])
+}
+
+// ============================================
+// PLANNING & TASKS
+// ============================================
+
+model CalendarEvent {
+  id           String    @id @default(cuid())
+  title        String
+  description  String?   @db.Text
+  startTime    DateTime
+  endTime      DateTime
+  eventType    String    // COURS_QUANT, COURS_VERBAL, SESSION_MENTOR, TEST_BLANC, SIMULATION_ORAL
+  studentId    String
+  instructorId String?   // Professor or Mentor
+  meetingUrl   String?
+  completed    Boolean   @default(false)
+  validatedBy  String?
+  validatedAt  DateTime?
+  history      Json?     // Modification history
+  createdById  String?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  createdBy   User?             @relation("EventCreator", fields: [createdById], references: [id])
+  instructor  Professor?        @relation(fields: [instructorId], references: [id])
+  student     Student           @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  invitations EventInvitation[]
+  tasks       Task[]
+
+  @@index([studentId])
+  @@index([instructorId])
+  @@index([createdById])
+  @@index([startTime])
+  @@index([eventType])
+}
+
+model EventInvitation {
+  id              String    @id @default(cuid())
+  calendarEventId String
+  userId          String
+  status          String    @default("PENDING") // PENDING, ACCEPTED, DECLINED
+  respondedAt     DateTime?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  calendarEvent CalendarEvent @relation(fields: [calendarEventId], references: [id], onDelete: Cascade)
+  notification  Notification?
+
+  @@unique([calendarEventId, userId])
+  @@index([calendarEventId])
+  @@index([userId])
+}
+
+model Task {
+  id              String    @id @default(cuid())
+  title           String
+  description     String?   @db.Text
+  timing          String    // BEFORE_EVENT, AFTER_EVENT, STANDALONE
+  dueDate         DateTime
+  category        String    // QUANT, VERBAL, ESSAY, CV, ORAL, GENERAL
+  studentId       String
+  calendarEventId String?
+  documentId      String?
+  completed       Boolean   @default(false)
+  completedAt     DateTime?
+  createdBy       String    // userId (prof, mentor, admin)
+  scheduledAt     DateTime? // For recurring tasks
+  durationMinutes Int       @default(60)
+  isCollaborative Boolean   @default(false)
+  isRecurring     Boolean   @default(false)
+  recurrenceRule  String?   // DAILY, WEEKLY, MONTHLY
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  calendarEvent CalendarEvent?    @relation(fields: [calendarEventId], references: [id])
+  document      Document?         @relation(fields: [documentId], references: [id])
+  student       Student           @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  participants  TaskParticipant[]
+  schedules     TaskSchedule[]
+
+  @@index([studentId])
+  @@index([calendarEventId])
+  @@index([dueDate])
+  @@index([scheduledAt])
+  @@index([completed])
+  @@index([category])
+}
+
+model TaskParticipant {
+  id        String   @id @default(cuid())
+  taskId    String
+  userId    String
+  role      String   @default("ASSIGNEE") // ASSIGNEE, REVIEWER
+  createdAt DateTime @default(now())
+
+  task Task @relation(fields: [taskId], references: [id], onDelete: Cascade)
+
+  @@unique([taskId, userId])
+  @@index([taskId])
+  @@index([userId])
+}
+
+model TaskSchedule {
+  id           String   @id @default(cuid())
+  taskId       String
+  scheduledFor DateTime
+  completed    Boolean  @default(false)
+  completedAt  DateTime?
+  createdAt    DateTime @default(now())
+
+  task Task @relation(fields: [taskId], references: [id], onDelete: Cascade)
+
+  @@index([taskId])
+  @@index([scheduledFor])
+}
+
+// ============================================
+// DOCUMENTS & FOLDERS
+// ============================================
+
+model Folder {
+  id        String   @id @default(cuid())
+  name      String
+  path      String
+  parentId  String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  documents   Document[]
+  parent      Folder?            @relation("FolderHierarchy", fields: [parentId], references: [id])
+  children    Folder[]           @relation("FolderHierarchy")
+  permissions FolderPermission[]
+  studentRoot Student[]          @relation("StudentRootFolder")
+
+  @@unique([parentId, path])
+  @@index([parentId])
+}
+
+model Document {
+  id           String   @id @default(cuid())
+  name         String
+  description  String?  @db.Text
+  storageType  String   @default("vercel_blob") // vercel_blob, s3
+  fileUrl      String
+  fileSize     BigInt
+  contentType  String
+  numPages     Int      @default(1)
+  thumbnailUrl String?
+  version      Int      @default(1)
+  folderId     String?
+  ownerId      String
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  folder      Folder?              @relation(fields: [folderId], references: [id])
+  owner       User                 @relation("DocumentOwner", fields: [ownerId], references: [id])
+  permissions DocumentPermission[]
+  essays      Essay[]
+  cvVersions  CVVersion[]
+  tasks       Task[]
+  testScores  TestScore[]
+  templateRules DocumentTemplateRule[]
+
+  @@index([ownerId])
+  @@index([folderId])
+}
+
+model DocumentPermission {
+  id          String   @id @default(cuid())
+  documentId  String
+  userId      String
+  canView     Boolean  @default(true)
+  canDownload Boolean  @default(false)
+  canComment  Boolean  @default(false)
+  canEdit     Boolean  @default(false)
+  createdBy   String
+  createdAt   DateTime @default(now())
+
+  document Document @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  user     User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([documentId, userId])
+  @@index([documentId])
+  @@index([userId])
+}
+
+model FolderPermission {
+  id        String   @id @default(cuid())
+  folderId  String
+  userId    String
+  canView   Boolean  @default(true)
+  canUpload Boolean  @default(false)
+  canEdit   Boolean  @default(false)
+  canDelete Boolean  @default(false)
+  createdBy String
+  createdAt DateTime @default(now())
+
+  folder Folder @relation(fields: [folderId], references: [id], onDelete: Cascade)
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([folderId, userId])
+  @@index([folderId])
+  @@index([userId])
+}
+
+// ============================================
+// DOCUMENT LIBRARY (Admin Global Library)
+// ============================================
+
+model DocumentLibrary {
+  id           String   @id @default(cuid())
+  name         String
+  description  String?  @db.Text
+  fileUrl      String
+  fileSize     BigInt
+  contentType  String
+  numPages     Int      @default(1)
+  thumbnailUrl String?
+  category     String?  // Comptabilité, Marketing, Processus, Packs, Écoles
+  isPrivate    Boolean  @default(false) // Private to admin only
+  tags         String[]
+  createdBy    String
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  creator         User                          @relation("DocumentLibraryCreator", fields: [createdBy], references: [id])
+  packs           DocumentLibraryPack[]
+  folderDocuments DocumentLibraryFolderDocument[]
+  versions        DocumentVersion[]
+
+  @@index([category])
+  @@index([isPrivate])
+  @@index([createdBy])
+}
+
+model DocumentLibraryPack {
+  id                String @id @default(cuid())
+  documentLibraryId String
+  packId            String
+
+  documentLibrary DocumentLibrary @relation(fields: [documentLibraryId], references: [id], onDelete: Cascade)
+  pack            Pack            @relation(fields: [packId], references: [id], onDelete: Cascade)
+
+  @@unique([documentLibraryId, packId])
+  @@index([documentLibraryId])
+  @@index([packId])
+}
+
+model DocumentLibraryFolderDocument {
+  id                String @id @default(cuid())
+  documentLibraryId String
+  targetFolder      String // Target folder path
+
+  documentLibrary DocumentLibrary @relation(fields: [documentLibraryId], references: [id], onDelete: Cascade)
+
+  @@index([documentLibraryId])
+}
+
+model DocumentVersion {
+  id                String   @id @default(cuid())
+  documentLibraryId String
+  version           Int
+  fileUrl           String
+  fileSize          BigInt
+  contentType       String
+  numPages          Int      @default(1)
+  notes             String?  @db.Text
+  createdBy         String
+  createdAt         DateTime @default(now())
+
+  documentLibrary DocumentLibrary @relation(fields: [documentLibraryId], references: [id], onDelete: Cascade)
+
+  @@unique([documentLibraryId, version])
+  @@index([documentLibraryId])
+}
+
+// ============================================
+// DOCUMENT TEMPLATES
+// ============================================
+
+model DocumentTemplate {
+  id               String   @id @default(cuid())
+  name             String
+  description      String?  @db.Text
+  packId           String?
+  folderStructure  Json     // JSON folder structure
+  includeDocuments Boolean  @default(false)
+  parentTemplateId String?
+  isSubTemplate    Boolean  @default(false)
+  active           Boolean  @default(true)
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  pack           Pack?                  @relation(fields: [packId], references: [id])
+  parentTemplate DocumentTemplate?      @relation("TemplateHierarchy", fields: [parentTemplateId], references: [id])
+  subTemplates   DocumentTemplate[]     @relation("TemplateHierarchy")
+  rules          DocumentTemplateRule[]
+  packLinks      DocumentTemplatePack[]
+
+  @@index([packId])
+  @@index([parentTemplateId])
+  @@index([active])
+}
+
+model DocumentTemplatePack {
+  id         String @id @default(cuid())
+  templateId String
+  packId     String
+
+  template DocumentTemplate @relation(fields: [templateId], references: [id], onDelete: Cascade)
+  pack     Pack             @relation(fields: [packId], references: [id], onDelete: Cascade)
+
+  @@unique([templateId, packId])
+  @@index([templateId])
+  @@index([packId])
+}
+
+model DocumentTemplateRule {
+  id           String   @id @default(cuid())
+  templateId   String?
+  documentId   String
+  ruleType     String   // PACK, SCHOOL, GEOGRAPHY, MENTOR, EVIDENT
+  condition    Json     // Condition (packId, testType, etc.)
+  targetFolder String   // Target folder path
+  visibleFor   String[] // STUDENT, MENTOR, PROF_QUANT, PROF_VERBAL
+  active       Boolean  @default(true)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  template DocumentTemplate? @relation(fields: [templateId], references: [id])
+  document Document          @relation(fields: [documentId], references: [id])
+
+  @@index([templateId])
+  @@index([documentId])
+  @@index([ruleType])
+  @@index([active])
+}
+
+// ============================================
+// ESSAYS & CV
+// ============================================
+
+model Essay {
+  id             String    @id @default(cuid())
+  title          String
+  content        String    @db.Text
+  version        Int       @default(1)
+  studentId      String
+  schoolId       String
+  programId      String?
+  status         String    @default("draft") // draft, in_review, finalized
+  documentId     String?
+  createdBy      String    // mentorId
+  isConsolidated Boolean   @default(false) // Created from multiple EssayResponse
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  document  Document?       @relation(fields: [documentId], references: [id])
+  school    School          @relation(fields: [schoolId], references: [id])
+  program   SchoolProgram?  @relation(fields: [programId], references: [id])
+  student   Student         @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  responses EssayResponse[]
+
+  @@index([studentId])
+  @@index([schoolId])
+  @@index([programId])
+  @@index([status])
+}
+
+model EssayQuestion {
+  id             String   @id @default(cuid())
+  schoolId       String
+  programId      String?
+  questionNumber Int      // 1, 2, 3, etc.
+  questionText   String   @db.Text
+  wordLimit      Int?     // Word limit (ex: 500)
+  characterLimit Int?     // Character limit
+  isRequired     Boolean  @default(true)
+  order          Int      // Display order
+  active         Boolean  @default(true)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  school    School          @relation(fields: [schoolId], references: [id])
+  program   SchoolProgram?  @relation(fields: [programId], references: [id])
+  responses EssayResponse[]
+
+  @@unique([schoolId, programId, questionNumber])
+  @@index([schoolId])
+  @@index([programId])
+  @@index([active])
+}
+
+model EssayResponse {
+  id              String    @id @default(cuid())
+  studentId       String
+  essayQuestionId String
+  essayId         String?   // Link to Essay if consolidated
+  content         String?   @db.Text
+  wordCount       Int?
+  characterCount  Int?
+  status          String    @default("NOT_STARTED") // NOT_STARTED, DRAFT, IN_REVIEW, FINALIZED
+  notes           String?   @db.Text // Mentor notes
+  completedAt     DateTime?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  student  Student       @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  question EssayQuestion @relation(fields: [essayQuestionId], references: [id])
+  essay    Essay?        @relation(fields: [essayId], references: [id])
+
+  @@unique([studentId, essayQuestionId])
+  @@index([studentId])
+  @@index([essayQuestionId])
+  @@index([status])
+}
+
+model CVVersion {
+  id         String   @id @default(cuid())
+  studentId  String
+  version    Int
+  documentId String
+  notes      String?  @db.Text
+  createdBy  String
+  createdAt  DateTime @default(now())
+
+  student  Student  @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  document Document @relation(fields: [documentId], references: [id])
+
+  @@unique([studentId, version])
+  @@index([studentId])
+}
+
+model OralSimulation {
+  id        String    @id @default(cuid())
+  studentId String
+  schoolId  String?
+  title     String
+  notes     String?   @db.Text
+  score     Float?
+  videoUrl  String?
+  date      DateTime
+  completed Boolean   @default(false)
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+
+  student Student @relation(fields: [studentId], references: [id], onDelete: Cascade)
+
+  @@index([studentId])
+}
+
+// ============================================
+// TESTS & SCORES
+// ============================================
+
+model TestScore {
+  id          String    @id @default(cuid())
+  studentId   String
+  testType    String    // GRE, GMAT, TAGE_MAGE
+  scoreType   String    // DIAGNOSTIC, PRACTICE, OFFICIAL
+  scoreQuant  Int?
+  scoreVerbal Int?
+  scoreAWA    Float?
+  scoreIR     Int?
+  totalScore  Int?
+  scoreString String?   // For custom score format
+  testDate    DateTime
+  validUntil  DateTime?
+  notes       String?   @db.Text
+  documentId  String?
+  createdBy   String
+  createdAt   DateTime  @default(now())
+
+  document Document? @relation(fields: [documentId], references: [id])
+  student  Student   @relation(fields: [studentId], references: [id], onDelete: Cascade)
+
+  @@index([studentId])
+  @@index([testType])
+  @@index([scoreType])
+  @@index([testDate])
+}
+
+// ============================================
+// COMMUNICATION
+// ============================================
+
+model Conversation {
+  id        String   @id @default(cuid())
+  studentId String
+  title     String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  student      Student                   @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  messages     Message[]
+  participants ConversationParticipant[]
+
+  @@index([studentId])
+}
+
+model ConversationParticipant {
+  id             String   @id @default(cuid())
+  conversationId String
+  userId         String
+  lastReadAt     DateTime?
+  createdAt      DateTime @default(now())
+
+  conversation Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  user         User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([conversationId, userId])
+  @@index([conversationId])
+  @@index([userId])
+}
+
+model Message {
+  id             String   @id @default(cuid())
+  conversationId String
+  createdById    String
+  content        String   @db.Text
+  attachmentUrl  String?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  conversation Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  createdBy    User         @relation("MessageCreator", fields: [createdById], references: [id])
+
+  @@index([conversationId])
+  @@index([createdById])
+  @@index([createdAt])
+}
+
+// ============================================
+// COMPTABILITÉ
+// ============================================
+
+model Quote {
+  id          String    @id @default(cuid())
+  studentId   String
+  quoteNumber String    @unique // Quote number (ex: QUOTE-2025-001)
+  totalAmount Int       // In cents (custom price)
+  status      String    @default("DRAFT") // DRAFT, SENT, VALIDATED, REJECTED, EXPIRED
+  sentAt      DateTime?
+  validatedAt DateTime?
+  rejectedAt  DateTime?
+  expiresAt   DateTime?
+  notes       String?   @db.Text
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  student Student     @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  items   QuoteItem[]
+  paymentSchedules PaymentSchedule[]
+
+  @@index([studentId])
+  @@index([status])
+  @@index([quoteNumber])
+}
+
+model QuoteItem {
+  id            String @id @default(cuid())
+  quoteId       String
+  studentPackId String
+  amount        Int    // In cents
+  description   String?
+
+  quote       Quote       @relation(fields: [quoteId], references: [id], onDelete: Cascade)
+  studentPack StudentPack @relation(fields: [studentPackId], references: [id])
+
+  @@index([quoteId])
+  @@index([studentPackId])
+}
+
+model PaymentSchedule {
+  id          String    @id @default(cuid())
+  studentId   String?
+  mentorId    String?
+  professorId String?
+  quoteId     String?
+  type        String    // STUDENT_PAYMENT, MENTOR_PAYMENT, PROFESSOR_PAYMENT
+  amount      Int       // In cents
+  dueDate     DateTime
+  status      String    @default("PENDING") // PENDING, PARTIAL, PAID, OVERDUE
+  paidAmount  Int       @default(0)
+  paidDate    DateTime?
+  receivedBy  String?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  student   Student?   @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  mentor    Mentor?    @relation(fields: [mentorId], references: [id], onDelete: Cascade)
+  professor Professor? @relation(fields: [professorId], references: [id], onDelete: Cascade)
+  quote     Quote?     @relation(fields: [quoteId], references: [id])
+  payments  Payment[]
+
+  @@index([studentId])
+  @@index([mentorId])
+  @@index([professorId])
+  @@index([quoteId])
+  @@index([dueDate])
+  @@index([status])
+}
+
+model Payment {
+  id          String    @id @default(cuid())
+  scheduleId  String?
+  studentId   String?
+  mentorId    String?
+  professorId String?
+  amount      Int       // In cents
+  paymentDate DateTime
+  receivedBy  String
+  validatedBy String?
+  validatedAt DateTime?
+  status      String    @default("PENDING_VALIDATION") // PENDING_VALIDATION, VALIDATED, REJECTED
+  notes       String?   @db.Text
+  createdAt   DateTime  @default(now())
+
+  schedule       PaymentSchedule? @relation(fields: [scheduleId], references: [id])
+  student        Student?         @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  mentor         Mentor?          @relation(fields: [mentorId], references: [id], onDelete: Cascade)
+  professor      Professor?       @relation(fields: [professorId], references: [id], onDelete: Cascade)
+  receivedByUser User             @relation("ReceivedBy", fields: [receivedBy], references: [id])
+
+  @@index([scheduleId])
+  @@index([studentId])
+  @@index([mentorId])
+  @@index([professorId])
+  @@index([receivedBy])
+  @@index([paymentDate])
+  @@index([status])
+}
+
+model Expense {
+  id             String   @id @default(cuid())
+  category       String   // SALAIRE, LOCAL, MATERIEL, MARKETING, AUTRE
+  customCategory String?
+  amount         Int      // In cents
+  description    String?  @db.Text
+  expenseDate    DateTime
+  isRecurring    Boolean  @default(false)
+  recurrenceRule String?  // MONTHLY, WEEKLY, etc.
+  studentId      String?  // If linked to specific student
+  createdAt      DateTime @default(now())
+
+  student Student? @relation(fields: [studentId], references: [id])
+
+  @@index([category])
+  @@index([expenseDate])
+  @@index([studentId])
+}
+
+model Distribution {
+  id                String   @id @default(cuid())
+  totalAmount       Int      // In cents
+  investmentAmount  Int      @default(0) // Reinvested
+  distributedAmount Int      // Distributed
+  distributionDate  DateTime
+  notes             String?  @db.Text
+  createdAt         DateTime @default(now())
+
+  distributions FounderDistribution[]
+
+  @@index([distributionDate])
+}
+
+model FounderDistribution {
+  id             String   @id @default(cuid())
+  distributionId String
+  founderId      String
+  amount         Int      // In cents
+  percentage     Float    // Percentage of distribution
+  createdAt      DateTime @default(now())
+
+  distribution Distribution @relation(fields: [distributionId], references: [id], onDelete: Cascade)
+  founder      User         @relation(fields: [founderId], references: [id])
+
+  @@index([distributionId])
+  @@index([founderId])
+}
+
+model InternalDebt {
+  id            String    @id @default(cuid())
+  fromFounderId String
+  toFounderId   String
+  amount        Int       // In cents
+  reason        String?   @db.Text
+  settled       Boolean   @default(false)
+  settledAt     DateTime?
+  createdAt     DateTime  @default(now())
+
+  fromFounder User @relation("FromDebt", fields: [fromFounderId], references: [id])
+  toFounder   User @relation("ToDebt", fields: [toFounderId], references: [id])
+
+  @@index([fromFounderId])
+  @@index([toFounderId])
+  @@index([settled])
+}
+
+// ============================================
+// SYSTEM
+// ============================================
+
+model Notification {
+  id                String    @id @default(cuid())
+  userId            String
+  type              String    // NEW_MESSAGE, TASK_DUE, PLANNING_MODIFIED, etc.
+  title             String
+  message           String    @db.Text
+  data              Json?
+  read              Boolean   @default(false)
+  readAt            DateTime?
+  eventInvitationId String?   @unique
+  createdAt         DateTime  @default(now())
+
+  user            User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  eventInvitation EventInvitation? @relation(fields: [eventInvitationId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([read])
+  @@index([createdAt])
+  @@index([type])
+}
+
+model AuditLog {
+  id           String   @id @default(cuid())
+  userId       String?
+  action       String   // CREATE_STUDENT, MODIFY_PLANNING, DELETE_DOCUMENT, etc.
+  resourceType String   // Student, CalendarEvent, Document, etc.
+  resourceId   String?
+  metadata     Json?
+  ipAddress    String?
+  userAgent    String?
+  createdAt    DateTime @default(now())
+
+  user User? @relation(fields: [userId], references: [id])
+
+  @@index([userId])
+  @@index([action])
+  @@index([resourceType, resourceId])
+  @@index([createdAt])
+}
+
+model AIQuestionHistory {
+  id         String   @id @default(cuid())
+  userId     String
+  documentId String?
+  question   String   @db.Text
+  answer     String   @db.Text
+  createdAt  DateTime @default(now())
+
+  @@index([userId])
+  @@index([documentId])
+  @@index([createdAt])
+}
+
+model PushSubscription {
+  id        String   @id @default(cuid())
+  userId    String
+  endpoint  String   @unique
+  keys      Json
+  createdAt DateTime @default(now())
+
+  @@index([userId])
+}
+
+model NotificationPreferences {
+  id                    String   @id @default(cuid())
+  userId                String   @unique
+  emailNotifications    Boolean  @default(true)
+  pushNotifications     Boolean  @default(true)
+  courseReminders       Boolean  @default(true)
+  taskReminders         Boolean  @default(true)
+  essayNotifications    Boolean  @default(true)
+  paymentNotifications  Boolean  @default(true)
+  createdAt             DateTime @default(now())
+  updatedAt             DateTime @updatedAt
+
+  @@index([userId])
+}
+
+// ============================================
+// STUDENT PROFILE DETAILS
+// ============================================
+
+model StudentAcademicExperience {
+  id           String   @id @default(cuid())
+  studentId    String
+  institution  String
+  degree       String
+  fieldOfStudy String?
+  startDate    DateTime
+  endDate      DateTime?
+  current      Boolean  @default(false)
+  gpa          Float?
+  description  String?  @db.Text
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  student Student @relation(fields: [studentId], references: [id], onDelete: Cascade)
+
+  @@index([studentId])
+}
+
+model StudentWorkExperience {
+  id          String   @id @default(cuid())
+  studentId   String
+  company     String
+  title       String
+  location    String?
+  startDate   DateTime
+  endDate     DateTime?
+  current     Boolean  @default(false)
+  description String?  @db.Text
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  student Student @relation(fields: [studentId], references: [id], onDelete: Cascade)
+
+  @@index([studentId])
+}
+
+model ProfileChangeLog {
+  id         String   @id @default(cuid())
+  userId     String
+  field      String
+  oldValue   String?
+  newValue   String?
+  changedBy  String
+  createdAt  DateTime @default(now())
+
+  @@index([userId])
+  @@index([createdAt])
+}

@@ -1,36 +1,165 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# PerformUp Platform
 
-## Getting Started
+Plateforme collaborative d'accompagnement d'étudiants pour les candidatures aux masters des grandes écoles européennes.
 
-First, run the development server:
+## Stack Technique
+
+- **Frontend**: Next.js 14 (App Router), React 18, TypeScript
+- **Styling**: Tailwind CSS, shadcn/ui (Radix UI)
+- **Backend**: Next.js API Routes, Prisma ORM
+- **Database**: PostgreSQL (Neon recommandé)
+- **Auth**: Better Auth
+- **Storage**: Vercel Blob
+
+## Structure du Projet
+
+```
+performup-platform/
+├── prisma/
+│   └── schema.prisma       # Schéma de base de données complet
+├── src/
+│   ├── app/
+│   │   ├── (auth)/         # Pages d'authentification
+│   │   │   ├── login/
+│   │   │   └── register/
+│   │   ├── (dashboard)/    # Pages protégées
+│   │   │   ├── dashboard/
+│   │   │   ├── students/
+│   │   │   ├── planning/
+│   │   │   ├── documents/
+│   │   │   └── essays/
+│   │   └── api/
+│   │       └── auth/       # API Better Auth
+│   ├── components/
+│   │   ├── layout/         # Composants de layout
+│   │   ├── students/       # Composants étudiants
+│   │   └── ui/             # Design System
+│   ├── lib/
+│   │   ├── auth.ts         # Configuration Better Auth
+│   │   ├── auth-client.ts  # Client auth pour le frontend
+│   │   ├── db/             # Client Prisma
+│   │   └── utils.ts        # Utilitaires
+│   └── types/
+│       └── auth.d.ts       # Types personnalisés
+├── tailwind.config.ts      # Configuration Tailwind + Design System
+└── package.json
+```
+
+## Design System
+
+### Couleurs
+
+- **PerformUp Blue**: `#495C93` - Couleur principale
+- **PerformUp Gold**: `#C8B38D` - Couleur d'accent
+- **Success**: `#22C55E`
+- **Warning**: `#F59E0B`
+- **Error**: `#EF4444`
+
+### Typographie
+
+- **Headings**: DM Serif Display
+- **Body**: Plus Jakarta Sans
+
+### Règles Importantes
+
+- **JAMAIS** d'emojis dans l'interface
+- **JAMAIS** de pourcentages affichés (utiliser des barres de progression visuelles avec messages encourageants)
+
+## Rôles et Permissions
+
+| Rôle | Description |
+|------|-------------|
+| **Admin** | Accès complet à toute la plateforme |
+| **Chef Exécutif** | Lecture seule sur les mentors supervisés |
+| **Mentor** | Gestion complète de ses étudiants |
+| **Professeur** | Accès aux cours et planning (Quant/Verbal) |
+| **Étudiant** | Accès à son propre espace |
+
+## Installation
+
+1. **Cloner et installer les dépendances**
+
+```bash
+cd performup-platform
+npm install
+```
+
+2. **Configuration**
+
+Créer un fichier `.env` basé sur `.env.example`:
+
+```bash
+cp .env.example .env
+```
+
+Configurer les variables d'environnement:
+
+```env
+DATABASE_URL="postgresql://..."
+BETTER_AUTH_SECRET="votre-secret-minimum-32-caracteres"
+NEXT_PUBLIC_APP_URL="http://localhost:3000"
+```
+
+3. **Base de données**
+
+```bash
+# Générer le client Prisma
+npx prisma generate
+
+# Appliquer les migrations (ou push pour dev)
+npx prisma db push
+```
+
+4. **Lancer le serveur de développement**
 
 ```bash
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+## Commandes Utiles
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+```bash
+# Développement
+npm run dev
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+# Build production
+npm run build
 
-## Learn More
+# Linting
+npm run lint
 
-To learn more about Next.js, take a look at the following resources:
+# Prisma Studio (visualiser la DB)
+npx prisma studio
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+# Générer le client Prisma
+npx prisma generate
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+# Push schema vers DB
+npx prisma db push
+```
 
-## Deploy on Vercel
+## Fonctionnalités Implémentées
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+- [x] Authentification (login/register) avec Better Auth
+- [x] Design System complet avec composants UI
+- [x] Navigation par rôle
+- [x] Dashboard avec statistiques
+- [x] Gestion des étudiants (CRM)
+- [x] Onboarding étudiant en 4 étapes
+- [x] Planning interactif (vue semaine/jour/liste)
+- [x] Système de documents avec dossiers
+- [x] Tracker d'essays par école
+- [x] Schéma Prisma complet
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+## À Développer
+
+- [ ] API endpoints complets
+- [ ] Intégration Google Calendar
+- [ ] Upload de documents (Vercel Blob)
+- [ ] Système de notifications temps réel (WebSocket)
+- [ ] Module comptabilité
+- [ ] Tests unitaires et E2E
+
+## Licence
+
+Propriétaire - PerformUp

@@ -7,7 +7,7 @@ import type {
     AllocationSuggestionOptions,
     AllocationStats,
 } from "@/lib/types/accounting.types";
-import type { Payment, PaymentSchedule, PaymentAllocation } from "@prisma/client";
+import type { PaymentSchedule, PaymentAllocation } from "@prisma/client";
 
 /**
  * Service de gestion de l'allocation des paiements aux échéances
@@ -61,7 +61,7 @@ export class PaymentAllocationService {
         }
 
         // Construire les filtres pour les échéances
-        const where: any = {
+        const where: Record<string, unknown> = {
             status: { in: ["PENDING", "PARTIAL", "OVERDUE"] },
             currency: payment.currency, // Même devise
         };

@@ -44,17 +44,16 @@ export async function GET(
                         },
                     },
                 },
-                payments: {
+                transactions: {
                     select: {
                         id: true,
                         amount: true,
                         currency: true,
-                        paymentDate: true,
-                        paymentMethod: true,
-                        referenceNumber: true,
+                        date: true,
+                        type: true,
                     },
                     orderBy: {
-                        paymentDate: "desc",
+                        date: "desc",
                     },
                 },
             },
@@ -67,13 +66,7 @@ export async function GET(
             );
         }
 
-        // Calculate remaining amount
-        const remainingAmount = mission.amount - mission.paidAmount;
-
-        return NextResponse.json({
-            ...mission,
-            remainingAmount,
-        });
+        return NextResponse.json(mission);
     } catch (error) {
         // Handle RBAC errors
         if (error instanceof Response) {
@@ -134,7 +127,7 @@ export async function PUT(
         }
 
         // Prepare update data
-        const updateData: any = {};
+        const updateData: Record<string, string | number | Date | null> = {};
 
         if (validatedData.description !== undefined) {
             updateData.description = validatedData.description;
@@ -192,7 +185,7 @@ export async function PUT(
             return NextResponse.json(
                 {
                     error: "Validation error",
-                    details: error.errors,
+                    details: error.issues,
                 },
                 { status: 400 }
             );

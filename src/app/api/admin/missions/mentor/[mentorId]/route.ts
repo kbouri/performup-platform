@@ -43,14 +43,14 @@ export async function GET(
                 mentorId: mentorId,
             },
             include: {
-                payments: {
+                transactions: {
                     select: {
                         id: true,
                         amount: true,
-                        paymentDate: true,
+                        date: true,
                     },
                     orderBy: {
-                        paymentDate: "desc",
+                        date: "desc",
                     },
                 },
             },

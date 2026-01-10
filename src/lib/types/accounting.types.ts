@@ -1,4 +1,4 @@
-import type { Payment, PaymentSchedule, PaymentAllocation } from "@prisma/client";
+import type { PaymentSchedule, PaymentAllocation } from "@prisma/client";
 
 /**
  * Suggestion d'allocation pour un paiement

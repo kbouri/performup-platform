@@ -53,25 +53,23 @@ export async function GET(
                         },
                     },
                 },
-                mission: {
+                schedule: {
                     select: {
                         id: true,
-                        description: true,
+                        type: true,
                         amount: true,
-                        paidAmount: true,
                         currency: true,
                         status: true,
-                        startDate: true,
-                        endDate: true,
+                        dueDate: true,
                     },
                 },
                 bankAccount: {
                     select: {
                         id: true,
-                        name: true,
-                        accountNumber: true,
+                        accountName: true,
+                        bankName: true,
                         currency: true,
-                        balance: true,
+                        iban: true,
                     },
                 },
                 allocations: {

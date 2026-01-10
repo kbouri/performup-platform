@@ -1,5 +1,5 @@
 import { prisma } from "../db/prisma";
-import { generateTransactionNumber, createTransaction, createFxExchangeTransactions } from "../accounting";
+import { createTransaction, createFxExchangeTransactions } from "../accounting";
 import type { Transaction } from "@prisma/client";
 import type { Payment, Expense, Mission, PaymentAllocation } from "@prisma/client";
 
@@ -41,9 +41,9 @@ export class TransactionJournalService {
         // Créer la transaction
         const transaction = await createTransaction({
             date: payment.paymentDate,
-            type: type as any,
+            type: type as "STUDENT_PAYMENT" | "MENTOR_PAYMENT" | "PROFESSOR_PAYMENT",
             amount: payment.amount,
-            currency: payment.currency as any,
+            currency: payment.currency as "EUR" | "MAD" | "USD",
             destinationAccountId: payment.bankAccountId,
             paymentId: payment.id,
             studentId: payment.studentId || undefined,
@@ -82,7 +82,7 @@ export class TransactionJournalService {
             date: expense.expenseDate,
             type: "EXPENSE",
             amount: expense.amount,
-            currency: expense.currency as any,
+            currency: expense.currency as "EUR" | "MAD" | "USD",
             sourceAccountId: expense.payingAccountId,
             expenseId: expense.id,
             studentId: expense.studentId || undefined,
@@ -121,9 +121,9 @@ export class TransactionJournalService {
 
         const transaction = await createTransaction({
             date: new Date(),
-            type: type as any,
+            type: type as "MENTOR_PAYMENT" | "PROFESSOR_PAYMENT",
             amount: mission.amount,
-            currency: mission.currency as any,
+            currency: mission.currency as "EUR" | "MAD" | "USD",
             sourceAccountId: paymentAccountId,
             missionId: mission.id,
             mentorId: mission.mentorId || undefined,
@@ -342,12 +342,13 @@ export class TransactionJournalService {
         limit?: number;
         offset?: number;
     }) {
-        const where: any = {};
+        const where: Record<string, unknown> = {};
 
         if (filters.startDate || filters.endDate) {
-            where.date = {};
-            if (filters.startDate) where.date.gte = filters.startDate;
-            if (filters.endDate) where.date.lte = filters.endDate;
+            const dateFilter: { gte?: Date; lte?: Date } = {};
+            if (filters.startDate) dateFilter.gte = filters.startDate;
+            if (filters.endDate) dateFilter.lte = filters.endDate;
+            where.date = dateFilter;
         }
 
         if (filters.currency) where.currency = filters.currency;

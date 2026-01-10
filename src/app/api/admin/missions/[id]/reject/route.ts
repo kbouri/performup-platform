@@ -43,22 +43,21 @@ export async function POST(
         const body = await req.json();
         const validatedData = rejectMissionSchema.parse(body);
 
-        // Update mission status to REJECTED
+        // Update mission status to CANCELLED (using existing status)
+        // Store rejection reason in notes field
         const updatedMission = await prisma.mission.update({
             where: { id: missionId },
             data: {
-                status: "REJECTED",
-                rejectedAt: new Date(),
-                rejectionReason: validatedData.reason,
+                status: "CANCELLED",
+                notes: validatedData.reason ? `Rejected: ${validatedData.reason}` : "Rejected",
             },
             select: {
                 id: true,
                 status: true,
-                rejectedAt: true,
-                rejectionReason: true,
                 description: true,
                 amount: true,
                 currency: true,
+                notes: true,
             },
         });
 
@@ -69,7 +68,7 @@ export async function POST(
             return NextResponse.json(
                 {
                     error: "Validation error",
-                    details: error.errors,
+                    details: error.issues,
                 },
                 { status: 400 }
             );

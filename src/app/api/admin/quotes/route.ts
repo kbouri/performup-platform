@@ -161,7 +161,7 @@ export async function POST(req: NextRequest) {
             return NextResponse.json(
                 {
                     error: "Validation error",
-                    details: error.errors,
+                    details: error.issues,
                 },
                 { status: 400 }
             );
@@ -202,7 +202,7 @@ export async function GET(req: NextRequest) {
         const validatedParams = listQuotesSchema.parse(queryParams);
 
         // Build where clause
-        const where: any = {};
+        const where: Record<string, unknown> = {};
         if (validatedParams.studentId) {
             where.studentId = validatedParams.studentId;
         }
@@ -264,7 +264,7 @@ export async function GET(req: NextRequest) {
             return NextResponse.json(
                 {
                     error: "Validation error",
-                    details: error.errors,
+                    details: error.issues,
                 },
                 { status: 400 }
             );

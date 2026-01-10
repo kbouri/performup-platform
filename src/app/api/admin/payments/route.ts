@@ -30,7 +30,7 @@ export async function GET(req: NextRequest) {
         const validatedParams = listPaymentsSchema.parse(queryParams);
 
         // Build where clause
-        const where: any = {};
+        const where: Record<string, unknown> = {};
 
         if (validatedParams.type) {
             where.type = validatedParams.type;
@@ -165,7 +165,7 @@ export async function GET(req: NextRequest) {
             return NextResponse.json(
                 {
                     error: "Validation error",
-                    details: error.errors,
+                    details: error.issues,
                 },
                 { status: 400 }
             );

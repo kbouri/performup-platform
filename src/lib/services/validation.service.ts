@@ -18,7 +18,7 @@ export interface Alert {
     level: AlertLevel;
     type: string;
     message: string;
-    data?: any;
+    data?: Record<string, unknown>;
 }
 
 /**
@@ -42,7 +42,7 @@ export class ValidationService {
         accountId: string,
         currency: string
     ): Promise<void> {
-        const isValid = await validateAccountCurrencyUtil(accountId, currency as any);
+        const isValid = await validateAccountCurrencyUtil(accountId, currency as "EUR" | "MAD" | "USD");
 
         if (!isValid) {
             const account = await prisma.bankAccount.findUnique({
@@ -150,7 +150,7 @@ export class ValidationService {
         const dateMax = new Date(date.getTime() + 24 * 60 * 60 * 1000);
 
         // Construire le filtre
-        const where: any = {
+        const where: Record<string, unknown> = {
             amount: {
                 gte: amountMin,
                 lte: amountMax,
@@ -185,7 +185,7 @@ export class ValidationService {
      */
     async generateAlerts(
         operation: "PAYMENT" | "EXPENSE" | "MISSION" | "TRANSFER",
-        data: any
+        data: Record<string, unknown>
     ): Promise<Alert[]> {
         const alerts: Alert[] = [];
 
@@ -253,7 +253,7 @@ export class ValidationService {
      * Génère des alertes pour une charge
      */
     private async generateExpenseAlerts(
-        expense: any,
+        expense: Record<string, unknown>,
         alerts: Alert[]
     ): Promise<void> {
         // Alerte: Charge importante (> 5000€)
@@ -280,7 +280,7 @@ export class ValidationService {
      * Génère des alertes pour une mission
      */
     private async generateMissionAlerts(
-        mission: any,
+        mission: Record<string, unknown>,
         alerts: Alert[]
     ): Promise<void> {
         // Alerte: Mission importante (> 2000€)
@@ -307,7 +307,7 @@ export class ValidationService {
      * Génère des alertes pour un transfert
      */
     private async generateTransferAlerts(
-        transfer: any,
+        transfer: Record<string, unknown>,
         alerts: Alert[]
     ): Promise<void> {
         // Alerte: Transfert important (> 10000€)

@@ -60,18 +60,19 @@ export async function POST(req: NextRequest) {
         }
 
         // Create the mission
+        // Note: Using validation schema fields, mapping to actual schema fields
         const mission = await prisma.mission.create({
             data: {
                 mentorId: validatedData.mentorId,
                 professorId: validatedData.professorId,
+                title: validatedData.description || "Mission",
                 description: validatedData.description,
                 amount: validatedData.amount,
-                paidAmount: 0,
                 currency: validatedData.currency,
                 status: "PENDING",
-                startDate: new Date(validatedData.startDate),
-                endDate: new Date(validatedData.endDate),
+                date: new Date(validatedData.startDate),
                 notes: validatedData.notes,
+                createdBy: "system", // TODO: Get from auth session
             },
             include: {
                 mentor: {
@@ -106,7 +107,7 @@ export async function POST(req: NextRequest) {
             return NextResponse.json(
                 {
                     error: "Validation error",
-                    details: error.errors,
+                    details: error.issues,
                 },
                 { status: 400 }
             );
@@ -152,7 +153,7 @@ export async function GET(req: NextRequest) {
         const validatedParams = listMissionsSchema.parse(queryParams);
 
         // Build where clause
-        const where: any = {};
+        const where: Record<string, unknown> = {};
 
         if (validatedParams.mentorId) {
             where.mentorId = validatedParams.mentorId;
@@ -171,13 +172,14 @@ export async function GET(req: NextRequest) {
         }
 
         if (validatedParams.startDate || validatedParams.endDate) {
-            where.startDate = {};
+            const dateFilter: { gte?: Date; lte?: Date } = {};
             if (validatedParams.startDate) {
-                where.startDate.gte = new Date(validatedParams.startDate);
+                dateFilter.gte = new Date(validatedParams.startDate);
             }
             if (validatedParams.endDate) {
-                where.startDate.lte = new Date(validatedParams.endDate);
+                dateFilter.lte = new Date(validatedParams.endDate);
             }
+            where.date = dateFilter;
         }
 
         // Get total count
@@ -207,14 +209,14 @@ export async function GET(req: NextRequest) {
                         },
                     },
                 },
-                payments: {
+                transactions: {
                     select: {
                         id: true,
                         amount: true,
-                        paymentDate: true,
+                        date: true,
                     },
                     orderBy: {
-                        paymentDate: "desc",
+                        date: "desc",
                     },
                 },
             },
@@ -256,7 +258,7 @@ export async function GET(req: NextRequest) {
             return NextResponse.json(
                 {
                     error: "Validation error",
-                    details: error.errors,
+                    details: error.issues,
                 },
                 { status: 400 }
             );

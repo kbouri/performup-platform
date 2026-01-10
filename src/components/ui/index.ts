@@ -15,4 +15,4 @@ export * from "./checkbox";
 export * from "./switch";
 export * from "./separator";
 export * from "./scroll-area";
-
+export * from "./textarea";

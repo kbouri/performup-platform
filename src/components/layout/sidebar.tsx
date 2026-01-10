@@ -18,6 +18,7 @@ import {
   ChevronLeft,
   LayoutDashboard,
   Users,
+  Users2,
   Calendar,
   FileText,
   PenTool,
@@ -48,10 +49,16 @@ const adminNavItems: NavItem[] = [
     icon: LayoutDashboard,
   },
   {
-    title: "Étudiants",
+    title: "Etudiants",
     href: "/students",
     icon: Users,
     roles: ["ADMIN", "EXECUTIVE_CHEF", "MENTOR"],
+  },
+  {
+    title: "Equipe",
+    href: "/admin/team",
+    icon: Users2,
+    roles: ["ADMIN"],
   },
   {
     title: "Planning",
@@ -88,8 +95,14 @@ const adminNavItems: NavItem[] = [
     roles: ["ADMIN"],
   },
   {
+    title: "Tâches",
+    href: "/tasks",
+    icon: ClipboardList,
+    roles: ["ADMIN", "MENTOR"],
+  },
+  {
     title: "Comptabilité",
-    href: "/accounting",
+    href: "/admin/accounting",
     icon: Wallet,
     roles: ["ADMIN"],
   },
@@ -133,6 +146,11 @@ const mentorNavItems: NavItem[] = [
     icon: ClipboardList,
   },
   {
+    title: "Comptabilité",
+    href: "/mentor/accounting",
+    icon: Wallet,
+  },
+  {
     title: "Messages",
     href: "/messages",
     icon: MessageSquare,
@@ -166,6 +184,11 @@ const professorNavItems: NavItem[] = [
     href: "/tasks",
     icon: ClipboardList,
   },
+  {
+    title: "Comptabilité",
+    href: "/professor/accounting",
+    icon: Wallet,
+  },
 ];
 
 const studentNavItems: NavItem[] = [
@@ -198,6 +221,11 @@ const studentNavItems: NavItem[] = [
     title: "Tâches",
     href: "/tasks",
     icon: ClipboardList,
+  },
+  {
+    title: "Comptabilité",
+    href: "/student/accounting",
+    icon: Wallet,
   },
   {
     title: "Tests",

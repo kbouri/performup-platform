@@ -4,6 +4,11 @@ import { useState } from "react";
 import { useSession } from "@/lib/auth-client";
 import { Header } from "./header";
 import { Sidebar } from "./sidebar";
+import {
+  ImpersonationProvider,
+  ImpersonationBanner,
+  ImpersonationBannerSpacer,
+} from "@/components/impersonation";
 
 interface DashboardLayoutProps {
   children: React.ReactNode;
@@ -29,25 +34,29 @@ export function DashboardLayout({ children }: DashboardLayoutProps) {
   const userRole = user?.role || "STUDENT";
 
   return (
-    <div className="flex min-h-screen bg-background">
-      {/* Sidebar */}
-      <Sidebar
-        userRole={userRole}
-        isOpen={sidebarOpen}
-        onClose={() => setSidebarOpen(false)}
-      />
+    <ImpersonationProvider>
+      <ImpersonationBanner />
+      <ImpersonationBannerSpacer />
+      <div className="flex min-h-screen bg-background">
+        {/* Sidebar */}
+        <Sidebar
+          userRole={userRole}
+          isOpen={sidebarOpen}
+          onClose={() => setSidebarOpen(false)}
+        />
 
-      {/* Main content area */}
-      <div className="flex flex-1 flex-col lg:ml-0">
-        {/* Header */}
-        <Header onMenuClick={() => setSidebarOpen(true)} />
+        {/* Main content area */}
+        <div className="flex flex-1 flex-col lg:ml-0">
+          {/* Header */}
+          <Header onMenuClick={() => setSidebarOpen(true)} />
 
-        {/* Page content */}
-        <main className="flex-1 overflow-auto">
-          <div className="container mx-auto p-6">{children}</div>
-        </main>
+          {/* Page content */}
+          <main className="flex-1 overflow-auto">
+            <div className="container mx-auto p-6">{children}</div>
+          </main>
+        </div>
       </div>
-    </div>
+    </ImpersonationProvider>
   );
 }
 

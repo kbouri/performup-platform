@@ -15,18 +15,18 @@ datasource db {
 // ============================================
 
 model User {
-  id            String    @id @default(cuid())
-  email         String    @unique
+  id            String   @id @default(cuid())
+  email         String   @unique
   name          String?
   firstName     String?
   lastName      String?
   image         String?
   phone         String?
-  role          String    @default("STUDENT") // ADMIN, EXECUTIVE_CHEF, MENTOR, PROFESSOR, STUDENT
-  active        Boolean   @default(true)
-  emailVerified Boolean   @default(false)
-  createdAt     DateTime  @default(now())
-  updatedAt     DateTime  @updatedAt
+  role          String   @default("STUDENT") // ADMIN, EXECUTIVE_CHEF, MENTOR, PROFESSOR, STUDENT
+  active        Boolean  @default(true)
+  emailVerified Boolean  @default(false)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
 
   // Relations 1:1 (role-specific profiles)
   admin         Admin?
@@ -36,27 +36,40 @@ model User {
   student       Student?
 
   // Better Auth relations
-  accounts      Account[]
-  sessions      Session[]
+  accounts Account[]
+  sessions Session[]
 
   // Other relations
-  createdEvents        CalendarEvent[]       @relation("EventCreator")
-  documents            Document[]            @relation("DocumentOwner")
-  documentPermissions  DocumentPermission[]
-  folderPermissions    FolderPermission[]
-  notifications        Notification[]
-  auditLogs            AuditLog[]
-  messagesCreated      Message[]             @relation("MessageCreator")
+  createdEvents            CalendarEvent[]           @relation("EventCreator")
+  documents                Document[]                @relation("DocumentOwner")
+  documentPermissions      DocumentPermission[]
+  folderPermissions        FolderPermission[]
+  notifications            Notification[]
+  auditLogs                AuditLog[]
+  messagesCreated          Message[]                 @relation("MessageCreator")
   conversationParticipants ConversationParticipant[]
-  
+
   // Comptabilité
   paymentsReceived     Payment[]             @relation("ReceivedBy")
   founderDistributions FounderDistribution[]
   debtsFrom            InternalDebt[]        @relation("FromDebt")
   debtsTo              InternalDebt[]        @relation("ToDebt")
-  
+
+  // Comptabilité avancée
+  bankAccounts             BankAccount[]
+  transactionsCreated      Transaction[]      @relation("TransactionCreator")
+  missionsValidated        Mission[]          @relation("MissionValidator")
+  missionsCreated          Mission[]          @relation("MissionCreator")
+  recurringExpensesCreated RecurringExpense[]
+  adminPositions           AdminPosition[]
+
   // Documents Library
   documentLibrariesCreated DocumentLibrary[] @relation("DocumentLibraryCreator")
+
+  // Team Management
+  teamInvitationsCreated TeamInvitation[]       @relation("InvitationCreator")
+  impersonationAsAdmin   ImpersonationSession[] @relation("ImpersonationAdmin")
+  impersonationAsTarget  ImpersonationSession[] @relation("ImpersonationTarget")
 
   @@index([email])
   @@index([role])
@@ -64,19 +77,19 @@ model User {
 }
 
 model Account {
-  id                String   @id @default(cuid())
-  userId            String
-  accountId         String
-  providerId        String
-  accessToken       String?
-  refreshToken      String?
-  accessTokenExpiresAt DateTime?
+  id                    String    @id @default(cuid())
+  userId                String
+  accountId             String
+  providerId            String
+  accessToken           String?
+  refreshToken          String?
+  accessTokenExpiresAt  DateTime?
   refreshTokenExpiresAt DateTime?
-  scope             String?
-  idToken           String?
-  password          String?
-  createdAt         DateTime @default(now())
-  updatedAt         DateTime @updatedAt
+  scope                 String?
+  idToken               String?
+  password              String?
+  createdAt             DateTime  @default(now())
+  updatedAt             DateTime  @updatedAt
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
@@ -123,56 +136,79 @@ model Admin {
 }
 
 model ExecutiveChef {
-  id        String   @id @default(cuid())
-  userId    String   @unique
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  id            String    @id @default(cuid())
+  userId        String    @unique
+  status        String    @default("ACTIVE") // ACTIVE, INACTIVE, PENDING
+  invitedAt     DateTime?
+  activatedAt   DateTime?
+  deactivatedAt DateTime?
+  deactivatedBy String?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
 
   user    User     @relation(fields: [userId], references: [id], onDelete: Cascade)
   mentors Mentor[]
+
+  @@index([status])
 }
 
 model Mentor {
-  id               String   @id @default(cuid())
-  userId           String   @unique
-  executiveChefId  String?
-  specialties      String[] // Array of specialties
-  bio              String?
-  hourlyRate       Int?     // In cents
-  paymentType      String   @default("MONTHLY") // MONTHLY, PER_MISSION
-  createdAt        DateTime @default(now())
-  updatedAt        DateTime @updatedAt
+  id              String    @id @default(cuid())
+  userId          String    @unique
+  executiveChefId String?
+  specialties     String[] // Array of specialties
+  bio             String?
+  hourlyRate      Int? // In cents
+  paymentType     String    @default("MONTHLY") // MONTHLY, PER_MISSION
+  status          String    @default("ACTIVE") // ACTIVE, INACTIVE, PENDING
+  invitedAt       DateTime?
+  activatedAt     DateTime?
+  deactivatedAt   DateTime?
+  deactivatedBy   String?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
 
   user          User           @relation(fields: [userId], references: [id], onDelete: Cascade)
   executiveChef ExecutiveChef? @relation(fields: [executiveChefId], references: [id])
   students      Student[]
-  
+
   // Comptabilité
   paymentSchedules PaymentSchedule[]
   payments         Payment[]
+  missions         Mission[]
+  transactions     Transaction[]
 
   @@index([executiveChefId])
+  @@index([status])
 }
 
 model Professor {
-  id           String   @id @default(cuid())
-  userId       String   @unique
-  type         String   // QUANT, VERBAL
-  hourlyRate   Int?     // In cents
-  availability Json?    // JSON with availability slots
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
+  id            String    @id @default(cuid())
+  userId        String    @unique
+  type          String // QUANT, VERBAL
+  hourlyRate    Int? // In cents
+  availability  Json? // JSON with availability slots
+  status        String    @default("ACTIVE") // ACTIVE, INACTIVE, PENDING
+  invitedAt     DateTime?
+  activatedAt   DateTime?
+  deactivatedAt DateTime?
+  deactivatedBy String?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
 
-  user              User            @relation(fields: [userId], references: [id], onDelete: Cascade)
-  studentsQuant     Student[]       @relation("ProfessorQuant")
-  studentsVerbal    Student[]       @relation("ProfessorVerbal")
-  calendarEvents    CalendarEvent[]
-  
+  user           User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  studentsQuant  Student[]       @relation("ProfessorQuant")
+  studentsVerbal Student[]       @relation("ProfessorVerbal")
+  calendarEvents CalendarEvent[]
+
   // Comptabilité
-  paymentSchedules  PaymentSchedule[]
-  payments          Payment[]
+  paymentSchedules PaymentSchedule[]
+  payments         Payment[]
+  missions         Mission[]
+  transactions     Transaction[]
 
   @@index([type])
+  @@index([status])
 }
 
 // ============================================
@@ -180,50 +216,52 @@ model Professor {
 // ============================================
 
 model Student {
-  id                 String    @id @default(cuid())
-  userId             String    @unique
-  dateOfBirth        DateTime?
-  nationality        String?
-  currentFormation   String?
-  linkedinUrl        String?
-  programType        String    @default("MASTER") // MASTER, BACHELOR
-  mentorId           String?
-  professorQuantId   String?
-  professorVerbalId  String?
-  rootFolderId       String?
-  internalNotes      String?   @db.Text
-  status             String    @default("EN_DEMARRAGE") // EN_DEMARRAGE, EN_COURS, FINALISE, SUSPENDU, EN_PAUSE
-  startDate          DateTime?
-  plannedEndDate     DateTime?
-  createdAt          DateTime  @default(now())
-  updatedAt          DateTime  @updatedAt
+  id                String    @id @default(cuid())
+  userId            String    @unique
+  dateOfBirth       DateTime?
+  nationality       String?
+  currentFormation  String?
+  linkedinUrl       String?
+  programType       String    @default("MASTER") // MASTER, BACHELOR
+  mentorId          String?
+  professorQuantId  String?
+  professorVerbalId String?
+  rootFolderId      String?
+  internalNotes     String?   @db.Text
+  status            String    @default("EN_DEMARRAGE") // EN_DEMARRAGE, EN_COURS, FINALISE, SUSPENDU, EN_PAUSE
+  startDate         DateTime?
+  plannedEndDate    DateTime?
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
 
-  user           User       @relation(fields: [userId], references: [id], onDelete: Cascade)
-  mentor         Mentor?    @relation(fields: [mentorId], references: [id])
-  professorQuant Professor? @relation("ProfessorQuant", fields: [professorQuantId], references: [id])
+  user            User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  mentor          Mentor?    @relation(fields: [mentorId], references: [id])
+  professorQuant  Professor? @relation("ProfessorQuant", fields: [professorQuantId], references: [id])
   professorVerbal Professor? @relation("ProfessorVerbal", fields: [professorVerbalId], references: [id])
-  rootFolder     Folder?    @relation("StudentRootFolder", fields: [rootFolderId], references: [id])
+  rootFolder      Folder?    @relation("StudentRootFolder", fields: [rootFolderId], references: [id])
 
   // Relations
-  packs              StudentPack[]
-  schools            StudentSchool[]
-  schoolApplications StudentSchoolApplication[]
-  calendarEvents     CalendarEvent[]
-  tasks              Task[]
-  essays             Essay[]
-  essayResponses     EssayResponse[]
-  testScores         TestScore[]
-  conversations      Conversation[]
+  packs               StudentPack[]
+  schools             StudentSchool[]
+  schoolApplications  StudentSchoolApplication[]
+  calendarEvents      CalendarEvent[]
+  tasks               Task[]
+  essays              Essay[]
+  essayResponses      EssayResponse[]
+  testScores          TestScore[]
+  conversations       Conversation[]
   academicExperiences StudentAcademicExperience[]
-  workExperiences    StudentWorkExperience[]
-  cvVersions         CVVersion[]
-  oralSimulations    OralSimulation[]
-  
+  workExperiences     StudentWorkExperience[]
+  cvVersions          CVVersion[]
+  oralSimulations     OralSimulation[]
+
   // Comptabilité
-  quotes             Quote[]
-  paymentSchedules   PaymentSchedule[]
-  payments           Payment[]
-  expenses           Expense[]
+  quotes           Quote[]
+  paymentSchedules PaymentSchedule[]
+  payments         Payment[]
+  expenses         Expense[]
+  missions         Mission[]
+  transactions     Transaction[]
 
   @@index([mentorId])
   @@index([professorQuantId])
@@ -235,12 +273,12 @@ model Student {
 model Pack {
   id             String   @id @default(cuid())
   name           String   @unique // Unique identifier (ex: PACK_ELITE_PREP)
-  displayName    String   // Display name (ex: "Elite Prep")
+  displayName    String // Display name (ex: "Elite Prep")
   description    String?  @db.Text
-  price          Int      // Base price in cents (reference only)
-  geography      String?  // France, UK, etc. (optional)
+  price          Int // Base price in cents (reference only)
+  geography      String? // France, UK, etc. (optional)
   isAddon        Boolean  @default(false)
-  folderTemplate Json?    // JSON folder structure template
+  folderTemplate Json? // JSON folder structure template
   active         Boolean  @default(true)
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
@@ -256,20 +294,20 @@ model Pack {
 }
 
 model StudentPack {
-  id              String    @id @default(cuid())
-  studentId       String
-  packId          String
-  config          Json?     // Configuration (testType, geography, etc.)
-  customPrice     Int       // Personalized price in cents (REQUIRED)
-  progressPercent Int       @default(0) // 0-100
-  startDate       DateTime  @default(now())
-  endDate         DateTime?
-  status          String    @default("active") // active, completed, cancelled, on_hold
-  notes           String?   @db.Text
-  servicesIncluded String?  @db.Text
-  comments        String?   @db.Text
-  createdAt       DateTime  @default(now())
-  updatedAt       DateTime  @updatedAt
+  id               String    @id @default(cuid())
+  studentId        String
+  packId           String
+  config           Json? // Configuration (testType, geography, etc.)
+  customPrice      Int // Personalized price in cents (REQUIRED)
+  progressPercent  Int       @default(0) // 0-100
+  startDate        DateTime  @default(now())
+  endDate          DateTime?
+  status           String    @default("active") // active, completed, cancelled, on_hold
+  notes            String?   @db.Text
+  servicesIncluded String?   @db.Text
+  comments         String?   @db.Text
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
 
   pack               Pack                       @relation(fields: [packId], references: [id])
   student            Student                    @relation(fields: [studentId], references: [id], onDelete: Cascade)
@@ -288,8 +326,8 @@ model StudentPack {
 
 model School {
   id          String   @id @default(cuid())
-  name        String   // HEC Paris, ESSEC, etc.
-  country     String   // France, UK, Italy, etc.
+  name        String // HEC Paris, ESSEC, etc.
+  country     String // France, UK, Italy, etc.
   city        String?
   website     String?
   logoUrl     String?
@@ -310,15 +348,15 @@ model School {
 }
 
 model SchoolProgram {
-  id          String   @id @default(cuid())
-  schoolId    String
-  name        String   // Master in Management (MiM), Master in Finance (MIF)
-  type        String   // MiM, MIF, MSc, MBA, Bachelor
-  duration    String?  // 2 years, 1 year
-  degree      String?  // Master, Bachelor
-  active      Boolean  @default(true)
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  id        String   @id @default(cuid())
+  schoolId  String
+  name      String // Master in Management (MiM), Master in Finance (MIF)
+  type      String // MiM, MIF, MSc, MBA, Bachelor
+  duration  String? // 2 years, 1 year
+  degree    String? // Master, Bachelor
+  active    Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   school         School                     @relation(fields: [schoolId], references: [id], onDelete: Cascade)
   applications   StudentSchoolApplication[]
@@ -336,7 +374,7 @@ model StudentSchool {
   studentId String
   schoolId  String
   programId String?
-  priority  Int      // Order of preference (1 = first priority)
+  priority  Int // Order of preference (1 = first priority)
   status    String   @default("TARGET") // TARGET, APPLIED, INTERVIEW, ADMITTED, REJECTED, WAITLISTED
   notes     String?  @db.Text
   createdAt DateTime @default(now())
@@ -360,17 +398,17 @@ model StudentSchoolApplication {
   schoolId      String
   programId     String
   studentPackId String?
-  priority      Int       // Order of preference
+  priority      Int // Order of preference
   status        String    @default("interested") // interested, in_progress, submitted, interview, admitted, rejected
   submittedAt   DateTime?
   notes         String?   @db.Text
   createdAt     DateTime  @default(now())
   updatedAt     DateTime  @updatedAt
 
-  student     Student        @relation(fields: [studentId], references: [id], onDelete: Cascade)
-  program     SchoolProgram  @relation(fields: [programId], references: [id])
-  school      School         @relation(fields: [schoolId], references: [id])
-  studentPack StudentPack?   @relation(fields: [studentPackId], references: [id])
+  student     Student       @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  program     SchoolProgram @relation(fields: [programId], references: [id])
+  school      School        @relation(fields: [schoolId], references: [id])
+  studentPack StudentPack?  @relation(fields: [studentPackId], references: [id])
 
   @@unique([studentId, programId])
   @@index([studentId])
@@ -390,14 +428,14 @@ model CalendarEvent {
   description  String?   @db.Text
   startTime    DateTime
   endTime      DateTime
-  eventType    String    // COURS_QUANT, COURS_VERBAL, SESSION_MENTOR, TEST_BLANC, SIMULATION_ORAL
+  eventType    String // COURS_QUANT, COURS_VERBAL, SESSION_MENTOR, TEST_BLANC, SIMULATION_ORAL
   studentId    String
-  instructorId String?   // Professor or Mentor
+  instructorId String? // Professor or Mentor
   meetingUrl   String?
   completed    Boolean   @default(false)
   validatedBy  String?
   validatedAt  DateTime?
-  history      Json?     // Modification history
+  history      Json? // Modification history
   createdById  String?
   createdAt    DateTime  @default(now())
   updatedAt    DateTime  @updatedAt
@@ -436,20 +474,20 @@ model Task {
   id              String    @id @default(cuid())
   title           String
   description     String?   @db.Text
-  timing          String    // BEFORE_EVENT, AFTER_EVENT, STANDALONE
+  timing          String // BEFORE_EVENT, AFTER_EVENT, STANDALONE
   dueDate         DateTime
-  category        String    // QUANT, VERBAL, ESSAY, CV, ORAL, GENERAL
+  category        String // QUANT, VERBAL, ESSAY, CV, ORAL, GENERAL
   studentId       String
   calendarEventId String?
   documentId      String?
   completed       Boolean   @default(false)
   completedAt     DateTime?
-  createdBy       String    // userId (prof, mentor, admin)
+  createdBy       String // userId (prof, mentor, admin)
   scheduledAt     DateTime? // For recurring tasks
   durationMinutes Int       @default(60)
   isCollaborative Boolean   @default(false)
   isRecurring     Boolean   @default(false)
-  recurrenceRule  String?   // DAILY, WEEKLY, MONTHLY
+  recurrenceRule  String? // DAILY, WEEKLY, MONTHLY
   createdAt       DateTime  @default(now())
   updatedAt       DateTime  @updatedAt
 
@@ -482,12 +520,12 @@ model TaskParticipant {
 }
 
 model TaskSchedule {
-  id           String   @id @default(cuid())
+  id           String    @id @default(cuid())
   taskId       String
   scheduledFor DateTime
-  completed    Boolean  @default(false)
+  completed    Boolean   @default(false)
   completedAt  DateTime?
-  createdAt    DateTime @default(now())
+  createdAt    DateTime  @default(now())
 
   task Task @relation(fields: [taskId], references: [id], onDelete: Cascade)
 
@@ -533,13 +571,13 @@ model Document {
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 
-  folder      Folder?              @relation(fields: [folderId], references: [id])
-  owner       User                 @relation("DocumentOwner", fields: [ownerId], references: [id])
-  permissions DocumentPermission[]
-  essays      Essay[]
-  cvVersions  CVVersion[]
-  tasks       Task[]
-  testScores  TestScore[]
+  folder        Folder?                @relation(fields: [folderId], references: [id])
+  owner         User                   @relation("DocumentOwner", fields: [ownerId], references: [id])
+  permissions   DocumentPermission[]
+  essays        Essay[]
+  cvVersions    CVVersion[]
+  tasks         Task[]
+  testScores    TestScore[]
   templateRules DocumentTemplateRule[]
 
   @@index([ownerId])
@@ -597,14 +635,14 @@ model DocumentLibrary {
   contentType  String
   numPages     Int      @default(1)
   thumbnailUrl String?
-  category     String?  // Comptabilité, Marketing, Processus, Packs, Écoles
+  category     String? // Comptabilité, Marketing, Processus, Packs, Écoles
   isPrivate    Boolean  @default(false) // Private to admin only
   tags         String[]
   createdBy    String
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 
-  creator         User                          @relation("DocumentLibraryCreator", fields: [createdBy], references: [id])
+  creator         User                            @relation("DocumentLibraryCreator", fields: [createdBy], references: [id])
   packs           DocumentLibraryPack[]
   folderDocuments DocumentLibraryFolderDocument[]
   versions        DocumentVersion[]
@@ -664,7 +702,7 @@ model DocumentTemplate {
   name             String
   description      String?  @db.Text
   packId           String?
-  folderStructure  Json     // JSON folder structure
+  folderStructure  Json // JSON folder structure
   includeDocuments Boolean  @default(false)
   parentTemplateId String?
   isSubTemplate    Boolean  @default(false)
@@ -700,9 +738,9 @@ model DocumentTemplateRule {
   id           String   @id @default(cuid())
   templateId   String?
   documentId   String
-  ruleType     String   // PACK, SCHOOL, GEOGRAPHY, MENTOR, EVIDENT
-  condition    Json     // Condition (packId, testType, etc.)
-  targetFolder String   // Target folder path
+  ruleType     String // PACK, SCHOOL, GEOGRAPHY, MENTOR, EVIDENT
+  condition    Json // Condition (packId, testType, etc.)
+  targetFolder String // Target folder path
   visibleFor   String[] // STUDENT, MENTOR, PROF_QUANT, PROF_VERBAL
   active       Boolean  @default(true)
   createdAt    DateTime @default(now())
@@ -722,19 +760,19 @@ model DocumentTemplateRule {
 // ============================================
 
 model Essay {
-  id             String    @id @default(cuid())
+  id             String   @id @default(cuid())
   title          String
-  content        String    @db.Text
-  version        Int       @default(1)
+  content        String   @db.Text
+  version        Int      @default(1)
   studentId      String
   schoolId       String
   programId      String?
-  status         String    @default("draft") // draft, in_review, finalized
+  status         String   @default("draft") // draft, in_review, finalized
   documentId     String?
-  createdBy      String    // mentorId
-  isConsolidated Boolean   @default(false) // Created from multiple EssayResponse
-  createdAt      DateTime  @default(now())
-  updatedAt      DateTime  @updatedAt
+  createdBy      String // mentorId
+  isConsolidated Boolean  @default(false) // Created from multiple EssayResponse
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
 
   document  Document?       @relation(fields: [documentId], references: [id])
   school    School          @relation(fields: [schoolId], references: [id])
@@ -752,12 +790,12 @@ model EssayQuestion {
   id             String   @id @default(cuid())
   schoolId       String
   programId      String?
-  questionNumber Int      // 1, 2, 3, etc.
+  questionNumber Int // 1, 2, 3, etc.
   questionText   String   @db.Text
-  wordLimit      Int?     // Word limit (ex: 500)
-  characterLimit Int?     // Character limit
+  wordLimit      Int? // Word limit (ex: 500)
+  characterLimit Int? // Character limit
   isRequired     Boolean  @default(true)
-  order          Int      // Display order
+  order          Int // Display order
   active         Boolean  @default(true)
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
@@ -776,7 +814,7 @@ model EssayResponse {
   id              String    @id @default(cuid())
   studentId       String
   essayQuestionId String
-  essayId         String?   // Link to Essay if consolidated
+  essayId         String? // Link to Essay if consolidated
   content         String?   @db.Text
   wordCount       Int?
   characterCount  Int?
@@ -813,17 +851,17 @@ model CVVersion {
 }
 
 model OralSimulation {
-  id        String    @id @default(cuid())
+  id        String   @id @default(cuid())
   studentId String
   schoolId  String?
   title     String
-  notes     String?   @db.Text
+  notes     String?  @db.Text
   score     Float?
   videoUrl  String?
   date      DateTime
-  completed Boolean   @default(false)
-  createdAt DateTime  @default(now())
-  updatedAt DateTime  @updatedAt
+  completed Boolean  @default(false)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   student Student @relation(fields: [studentId], references: [id], onDelete: Cascade)
 
@@ -837,14 +875,14 @@ model OralSimulation {
 model TestScore {
   id          String    @id @default(cuid())
   studentId   String
-  testType    String    // GRE, GMAT, TAGE_MAGE
-  scoreType   String    // DIAGNOSTIC, PRACTICE, OFFICIAL
+  testType    String // GRE, GMAT, TAGE_MAGE
+  scoreType   String // DIAGNOSTIC, PRACTICE, OFFICIAL
   scoreQuant  Int?
   scoreVerbal Int?
   scoreAWA    Float?
   scoreIR     Int?
   totalScore  Int?
-  scoreString String?   // For custom score format
+  scoreString String? // For custom score format
   testDate    DateTime
   validUntil  DateTime?
   notes       String?   @db.Text
@@ -880,11 +918,11 @@ model Conversation {
 }
 
 model ConversationParticipant {
-  id             String   @id @default(cuid())
+  id             String    @id @default(cuid())
   conversationId String
   userId         String
   lastReadAt     DateTime?
-  createdAt      DateTime @default(now())
+  createdAt      DateTime  @default(now())
 
   conversation Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
   user         User         @relation(fields: [userId], references: [id], onDelete: Cascade)
@@ -916,22 +954,25 @@ model Message {
 // ============================================
 
 model Quote {
-  id          String    @id @default(cuid())
-  studentId   String
-  quoteNumber String    @unique // Quote number (ex: QUOTE-2025-001)
-  totalAmount Int       // In cents (custom price)
-  status      String    @default("DRAFT") // DRAFT, SENT, VALIDATED, REJECTED, EXPIRED
-  sentAt      DateTime?
-  validatedAt DateTime?
-  rejectedAt  DateTime?
-  expiresAt   DateTime?
-  notes       String?   @db.Text
-  createdAt   DateTime  @default(now())
-  updatedAt   DateTime  @updatedAt
+  id              String    @id @default(cuid())
+  studentId       String
+  quoteNumber     String    @unique // Quote number (ex: QUOTE-2025-001)
+  totalAmount     Int // In cents (custom price)
+  currency        String    @default("EUR") // Always EUR for contractual
+  paymentCurrency String? // Preferred payment currency (EUR, MAD, USD)
+  status          String    @default("DRAFT") // DRAFT, SENT, VALIDATED, REJECTED, EXPIRED
+  sentAt          DateTime?
+  validatedAt     DateTime?
+  rejectedAt      DateTime?
+  expiresAt       DateTime?
+  notes           String?   @db.Text
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
 
-  student Student     @relation(fields: [studentId], references: [id], onDelete: Cascade)
-  items   QuoteItem[]
+  student          Student           @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  items            QuoteItem[]
   paymentSchedules PaymentSchedule[]
+  transactions     Transaction[]
 
   @@index([studentId])
   @@index([status])
@@ -939,10 +980,10 @@ model Quote {
 }
 
 model QuoteItem {
-  id            String @id @default(cuid())
+  id            String  @id @default(cuid())
   quoteId       String
   studentPackId String
-  amount        Int    // In cents
+  amount        Int // In cents
   description   String?
 
   quote       Quote       @relation(fields: [quoteId], references: [id], onDelete: Cascade)
@@ -953,26 +994,33 @@ model QuoteItem {
 }
 
 model PaymentSchedule {
-  id          String    @id @default(cuid())
-  studentId   String?
-  mentorId    String?
-  professorId String?
-  quoteId     String?
-  type        String    // STUDENT_PAYMENT, MENTOR_PAYMENT, PROFESSOR_PAYMENT
-  amount      Int       // In cents
-  dueDate     DateTime
-  status      String    @default("PENDING") // PENDING, PARTIAL, PAID, OVERDUE
-  paidAmount  Int       @default(0)
-  paidDate    DateTime?
-  receivedBy  String?
-  createdAt   DateTime  @default(now())
-  updatedAt   DateTime  @updatedAt
+  id               String    @id @default(cuid())
+  studentId        String?
+  mentorId         String?
+  professorId      String?
+  quoteId          String?
+  type             String // STUDENT_PAYMENT, MENTOR_PAYMENT, PROFESSOR_PAYMENT
+  amount           Int // In cents
+  currency         String    @default("EUR") // Expected payment currency
+  scheduleCurrency String    @default("EUR") // Devise de l'échéance contractuelle
+  actualCurrency   String? // Actual currency received (if different)
+  exchangeRate     Float? // If paid in different currency
+  dueDate          DateTime
+  status           String    @default("PENDING") // PENDING, PARTIAL, PAID, OVERDUE
+  paidAmount       Int       @default(0)
+  paidDate         DateTime?
+  receivedBy       String?
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
 
-  student   Student?   @relation(fields: [studentId], references: [id], onDelete: Cascade)
-  mentor    Mentor?    @relation(fields: [mentorId], references: [id], onDelete: Cascade)
-  professor Professor? @relation(fields: [professorId], references: [id], onDelete: Cascade)
-  quote     Quote?     @relation(fields: [quoteId], references: [id])
-  payments  Payment[]
+  student             Student?             @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  mentor              Mentor?              @relation(fields: [mentorId], references: [id], onDelete: Cascade)
+  professor           Professor?           @relation(fields: [professorId], references: [id], onDelete: Cascade)
+  quote               Quote?               @relation(fields: [quoteId], references: [id])
+  payments            Payment[]
+  transactions        Transaction[]
+  allocations         PaymentAllocation[]
+  cashflowProjections CashflowProjection[]
 
   @@index([studentId])
   @@index([mentorId])
@@ -983,74 +1031,113 @@ model PaymentSchedule {
 }
 
 model Payment {
-  id          String    @id @default(cuid())
-  scheduleId  String?
-  studentId   String?
-  mentorId    String?
-  professorId String?
-  amount      Int       // In cents
-  paymentDate DateTime
-  receivedBy  String
-  validatedBy String?
-  validatedAt DateTime?
-  status      String    @default("PENDING_VALIDATION") // PENDING_VALIDATION, VALIDATED, REJECTED
-  notes       String?   @db.Text
-  createdAt   DateTime  @default(now())
+  id              String    @id @default(cuid())
+  scheduleId      String?
+  studentId       String?
+  mentorId        String?
+  professorId     String?
+  amount          Int // In cents
+  currency        String    @default("EUR") // EUR, MAD, USD
+  bankAccountId   String? // Receiving bank account
+  paymentDate     DateTime
+  paymentMethod   String? // BANK_TRANSFER, CASH, CARD, etc.
+  referenceNumber String? // Numéro de référence bancaire
+  receivedBy      String
+  validatedBy     String?
+  validatedAt     DateTime?
+  status          String    @default("PENDING_VALIDATION") // PENDING_VALIDATION, VALIDATED, REJECTED
+  notes           String?   @db.Text
+  createdAt       DateTime  @default(now())
 
-  schedule       PaymentSchedule? @relation(fields: [scheduleId], references: [id])
-  student        Student?         @relation(fields: [studentId], references: [id], onDelete: Cascade)
-  mentor         Mentor?          @relation(fields: [mentorId], references: [id], onDelete: Cascade)
-  professor      Professor?       @relation(fields: [professorId], references: [id], onDelete: Cascade)
-  receivedByUser User             @relation("ReceivedBy", fields: [receivedBy], references: [id])
+  schedule       PaymentSchedule?    @relation(fields: [scheduleId], references: [id])
+  student        Student?            @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  mentor         Mentor?             @relation(fields: [mentorId], references: [id], onDelete: Cascade)
+  professor      Professor?          @relation(fields: [professorId], references: [id], onDelete: Cascade)
+  receivedByUser User                @relation("ReceivedBy", fields: [receivedBy], references: [id])
+  bankAccount    BankAccount?        @relation(fields: [bankAccountId], references: [id])
+  transactions   Transaction[]
+  allocations    PaymentAllocation[]
 
   @@index([scheduleId])
   @@index([studentId])
   @@index([mentorId])
   @@index([professorId])
   @@index([receivedBy])
+  @@index([bankAccountId])
   @@index([paymentDate])
   @@index([status])
+  @@index([currency])
+}
+
+// ============================================
+// PAYMENT ALLOCATION
+// ============================================
+
+model PaymentAllocation {
+  id         String   @id @default(cuid())
+  paymentId  String
+  scheduleId String
+  amount     Int // Montant alloué en centimes
+  currency   String // Devise de l'allocation
+  createdAt  DateTime @default(now())
+
+  payment  Payment         @relation(fields: [paymentId], references: [id], onDelete: Cascade)
+  schedule PaymentSchedule @relation(fields: [scheduleId], references: [id], onDelete: Cascade)
+
+  @@index([paymentId])
+  @@index([scheduleId])
 }
 
 model Expense {
-  id             String   @id @default(cuid())
-  category       String   // SALAIRE, LOCAL, MATERIEL, MARKETING, AUTRE
-  customCategory String?
-  amount         Int      // In cents
-  description    String?  @db.Text
-  expenseDate    DateTime
-  isRecurring    Boolean  @default(false)
-  recurrenceRule String?  // MONTHLY, WEEKLY, etc.
-  studentId      String?  // If linked to specific student
-  createdAt      DateTime @default(now())
+  id              String   @id @default(cuid())
+  category        String // SALAIRE, LOCAL, MATERIEL, MARKETING, SAAS, BANK_FEES, DEVELOPER, AUTRE
+  customCategory  String?
+  amount          Int // In cents
+  currency        String   @default("EUR") // EUR, MAD, USD
+  supplier        String? // Fournisseur
+  description     String?  @db.Text
+  expenseDate     DateTime
+  isRecurring     Boolean  @default(false)
+  recurrenceRule  String? // MONTHLY, WEEKLY, etc.
+  studentId       String? // If linked to specific student
+  payingAccountId String? // Bank account used to pay
+  createdAt       DateTime @default(now())
 
-  student Student? @relation(fields: [studentId], references: [id])
+  student             Student?             @relation(fields: [studentId], references: [id])
+  payingAccount       BankAccount?         @relation(fields: [payingAccountId], references: [id])
+  transactions        Transaction[]
+  cashflowProjections CashflowProjection[]
 
   @@index([category])
   @@index([expenseDate])
   @@index([studentId])
+  @@index([payingAccountId])
+  @@index([currency])
 }
 
 model Distribution {
   id                String   @id @default(cuid())
-  totalAmount       Int      // In cents
+  totalAmount       Int // In cents
+  currency          String   @default("EUR") // EUR, MAD, USD
   investmentAmount  Int      @default(0) // Reinvested
-  distributedAmount Int      // Distributed
+  distributedAmount Int // Distributed
   distributionDate  DateTime
   notes             String?  @db.Text
   createdAt         DateTime @default(now())
 
   distributions FounderDistribution[]
+  transactions  Transaction[]
 
   @@index([distributionDate])
+  @@index([currency])
 }
 
 model FounderDistribution {
   id             String   @id @default(cuid())
   distributionId String
   founderId      String
-  amount         Int      // In cents
-  percentage     Float    // Percentage of distribution
+  amount         Int // In cents
+  percentage     Float // Percentage of distribution
   createdAt      DateTime @default(now())
 
   distribution Distribution @relation(fields: [distributionId], references: [id], onDelete: Cascade)
@@ -1064,7 +1151,7 @@ model InternalDebt {
   id            String    @id @default(cuid())
   fromFounderId String
   toFounderId   String
-  amount        Int       // In cents
+  amount        Int // In cents
   reason        String?   @db.Text
   settled       Boolean   @default(false)
   settledAt     DateTime?
@@ -1085,7 +1172,7 @@ model InternalDebt {
 model Notification {
   id                String    @id @default(cuid())
   userId            String
-  type              String    // NEW_MESSAGE, TASK_DUE, PLANNING_MODIFIED, etc.
+  type              String // NEW_MESSAGE, TASK_DUE, PLANNING_MODIFIED, etc.
   title             String
   message           String    @db.Text
   data              Json?
@@ -1106,8 +1193,8 @@ model Notification {
 model AuditLog {
   id           String   @id @default(cuid())
   userId       String?
-  action       String   // CREATE_STUDENT, MODIFY_PLANNING, DELETE_DOCUMENT, etc.
-  resourceType String   // Student, CalendarEvent, Document, etc.
+  action       String // CREATE_STUDENT, MODIFY_PLANNING, DELETE_DOCUMENT, etc.
+  resourceType String // Student, CalendarEvent, Document, etc.
   resourceId   String?
   metadata     Json?
   ipAddress    String?
@@ -1146,16 +1233,16 @@ model PushSubscription {
 }
 
 model NotificationPreferences {
-  id                    String   @id @default(cuid())
-  userId                String   @unique
-  emailNotifications    Boolean  @default(true)
-  pushNotifications     Boolean  @default(true)
-  courseReminders       Boolean  @default(true)
-  taskReminders         Boolean  @default(true)
-  essayNotifications    Boolean  @default(true)
-  paymentNotifications  Boolean  @default(true)
-  createdAt             DateTime @default(now())
-  updatedAt             DateTime @updatedAt
+  id                   String   @id @default(cuid())
+  userId               String   @unique
+  emailNotifications   Boolean  @default(true)
+  pushNotifications    Boolean  @default(true)
+  courseReminders      Boolean  @default(true)
+  taskReminders        Boolean  @default(true)
+  essayNotifications   Boolean  @default(true)
+  paymentNotifications Boolean  @default(true)
+  createdAt            DateTime @default(now())
+  updatedAt            DateTime @updatedAt
 
   @@index([userId])
 }
@@ -1165,18 +1252,18 @@ model NotificationPreferences {
 // ============================================
 
 model StudentAcademicExperience {
-  id           String   @id @default(cuid())
+  id           String    @id @default(cuid())
   studentId    String
   institution  String
   degree       String
   fieldOfStudy String?
   startDate    DateTime
   endDate      DateTime?
-  current      Boolean  @default(false)
+  current      Boolean   @default(false)
   gpa          Float?
-  description  String?  @db.Text
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
+  description  String?   @db.Text
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
 
   student Student @relation(fields: [studentId], references: [id], onDelete: Cascade)
 
@@ -1184,17 +1271,17 @@ model StudentAcademicExperience {
 }
 
 model StudentWorkExperience {
-  id          String   @id @default(cuid())
+  id          String    @id @default(cuid())
   studentId   String
   company     String
   title       String
   location    String?
   startDate   DateTime
   endDate     DateTime?
-  current     Boolean  @default(false)
-  description String?  @db.Text
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  current     Boolean   @default(false)
+  description String?   @db.Text
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
 
   student Student @relation(fields: [studentId], references: [id], onDelete: Cascade)
 
@@ -1202,14 +1289,279 @@ model StudentWorkExperience {
 }
 
 model ProfileChangeLog {
-  id         String   @id @default(cuid())
-  userId     String
-  field      String
-  oldValue   String?
-  newValue   String?
-  changedBy  String
-  createdAt  DateTime @default(now())
+  id        String   @id @default(cuid())
+  userId    String
+  field     String
+  oldValue  String?
+  newValue  String?
+  changedBy String
+  createdAt DateTime @default(now())
 
   @@index([userId])
   @@index([createdAt])
+}
+
+// ============================================
+// TEAM MANAGEMENT
+// ============================================
+
+model TeamInvitation {
+  id            String    @id @default(cuid())
+  email         String
+  role          String // MENTOR, PROFESSOR, EXECUTIVE_CHEF
+  professorType String? // QUANT, VERBAL (si role = PROFESSOR)
+  token         String    @unique
+  invitedById   String
+  status        String    @default("PENDING") // PENDING, ACCEPTED, EXPIRED, CANCELLED
+  expiresAt     DateTime
+  acceptedAt    DateTime?
+  metadata      Json? // hourlyRate, specialties, executiveChefId
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  invitedBy User @relation("InvitationCreator", fields: [invitedById], references: [id])
+
+  @@index([email])
+  @@index([token])
+  @@index([status])
+  @@index([invitedById])
+}
+
+model ImpersonationSession {
+  id           String    @id @default(cuid())
+  adminUserId  String
+  targetUserId String
+  startedAt    DateTime  @default(now())
+  endedAt      DateTime?
+  ipAddress    String?
+  userAgent    String?
+
+  adminUser  User @relation("ImpersonationAdmin", fields: [adminUserId], references: [id])
+  targetUser User @relation("ImpersonationTarget", fields: [targetUserId], references: [id])
+
+  @@index([adminUserId])
+  @@index([targetUserId])
+  @@index([startedAt])
+}
+
+// ============================================
+// COMPTABILITE AVANCEE
+// ============================================
+
+model BankAccount {
+  id          String  @id @default(cuid())
+  userId      String
+  accountType String // BANK, CASH
+  bankName    String? // CIH, Revolut, LCL, Caisse Epargne, etc.
+  accountName String // Nom affiche
+  currency    String // EUR, MAD, USD (une seule devise par compte)
+  country     String? // FR, MA, US
+  iban        String?
+
+  // Propriétaire économique (pour les comptes admin)
+  economicOwner String? // "Karim", "Simo", "Sara", ou null pour comptes externes
+  ownerType     String  @default("EXTERNAL") // ADMIN, STUDENT, MENTOR, PROFESSOR, EXTERNAL
+
+  isActive     Boolean  @default(true)
+  isAdminOwned Boolean  @default(false) // True for pre-defined admin accounts
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  user                      User               @relation(fields: [userId], references: [id])
+  transactionsAsSource      Transaction[]      @relation("SourceAccount")
+  transactionsAsDestination Transaction[]      @relation("DestinationAccount")
+  paymentsReceived          Payment[]
+  expensesPaid              Expense[]
+  recurringExpensesPaid     RecurringExpense[]
+
+  @@index([userId])
+  @@index([currency])
+  @@index([isActive])
+  @@index([isAdminOwned])
+  @@index([economicOwner])
+  @@index([ownerType])
+}
+
+model Transaction {
+  id                String   @id @default(cuid())
+  transactionNumber String   @unique // TXN-2025-00001
+  date              DateTime
+  type              String // STUDENT_PAYMENT, MENTOR_PAYMENT, PROFESSOR_PAYMENT, EXPENSE, DISTRIBUTION, TRANSFER, FX_EXCHANGE
+  amount            Int // En centimes
+  currency          String // EUR, MAD, USD
+
+  sourceAccountId      String?
+  destinationAccountId String?
+
+  // References polymorphiques
+  paymentId         String?
+  expenseId         String?
+  distributionId    String?
+  missionId         String?
+  quoteId           String?
+  paymentScheduleId String?
+
+  // Personnes concernees
+  studentId   String?
+  mentorId    String?
+  professorId String?
+
+  // Champs FX (pour change de devise)
+  linkedTransactionId String? @unique
+  exchangeRate        Float?
+  fxFees              Int? // Frais en centimes
+
+  description String?  @db.Text
+  notes       String?  @db.Text
+  createdBy   String
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  sourceAccount      BankAccount?     @relation("SourceAccount", fields: [sourceAccountId], references: [id])
+  destinationAccount BankAccount?     @relation("DestinationAccount", fields: [destinationAccountId], references: [id])
+  payment            Payment?         @relation(fields: [paymentId], references: [id])
+  expense            Expense?         @relation(fields: [expenseId], references: [id])
+  distribution       Distribution?    @relation(fields: [distributionId], references: [id])
+  mission            Mission?         @relation(fields: [missionId], references: [id])
+  quote              Quote?           @relation(fields: [quoteId], references: [id])
+  paymentSchedule    PaymentSchedule? @relation(fields: [paymentScheduleId], references: [id])
+  student            Student?         @relation(fields: [studentId], references: [id])
+  mentor             Mentor?          @relation(fields: [mentorId], references: [id])
+  professor          Professor?       @relation(fields: [professorId], references: [id])
+  creator            User             @relation("TransactionCreator", fields: [createdBy], references: [id])
+  linkedTransaction  Transaction?     @relation("FXPair", fields: [linkedTransactionId], references: [id])
+  fxPairTransaction  Transaction?     @relation("FXPair")
+
+  @@index([date])
+  @@index([type])
+  @@index([currency])
+  @@index([studentId])
+  @@index([mentorId])
+  @@index([professorId])
+  @@index([sourceAccountId])
+  @@index([destinationAccountId])
+  @@index([paymentId])
+  @@index([expenseId])
+  @@index([distributionId])
+  @@index([missionId])
+  @@index([transactionNumber])
+}
+
+model Mission {
+  id          String    @id @default(cuid())
+  mentorId    String?
+  professorId String?
+  studentId   String?
+  title       String
+  description String?   @db.Text
+  date        DateTime
+  hoursWorked Float?
+  amount      Int // En centimes
+  currency    String    @default("EUR")
+  status      String    @default("PENDING") // PENDING, VALIDATED, PAID, CANCELLED
+  validatedBy String?
+  validatedAt DateTime?
+  paidAt      DateTime?
+  notes       String?   @db.Text
+  createdBy   String
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  mentor              Mentor?              @relation(fields: [mentorId], references: [id])
+  professor           Professor?           @relation(fields: [professorId], references: [id])
+  student             Student?             @relation(fields: [studentId], references: [id])
+  validator           User?                @relation("MissionValidator", fields: [validatedBy], references: [id])
+  creator             User                 @relation("MissionCreator", fields: [createdBy], references: [id])
+  transactions        Transaction[]
+  cashflowProjections CashflowProjection[]
+
+  @@index([mentorId])
+  @@index([professorId])
+  @@index([studentId])
+  @@index([status])
+  @@index([date])
+  @@index([createdBy])
+}
+
+model RecurringExpense {
+  id              String    @id @default(cuid())
+  name            String
+  supplier        String?
+  category        String // SAAS, BANK_FEES, DEVELOPER, MARKETING, AUTRE
+  amount          Int // En centimes
+  currency        String
+  frequency       String // MONTHLY, QUARTERLY, YEARLY
+  nextDueDate     DateTime
+  lastPaidDate    DateTime?
+  payingAccountId String?
+  isActive        Boolean   @default(true)
+  notes           String?   @db.Text
+  createdBy       String
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  payingAccount       BankAccount?         @relation(fields: [payingAccountId], references: [id])
+  creator             User                 @relation(fields: [createdBy], references: [id])
+  cashflowProjections CashflowProjection[]
+
+  @@index([category])
+  @@index([nextDueDate])
+  @@index([isActive])
+  @@index([createdBy])
+}
+
+model AdminPosition {
+  id        String   @id @default(cuid())
+  adminId   String
+  currency  String // EUR, MAD, USD
+  advanced  Int      @default(0) // Avance en centimes (montant avance par l'admin)
+  received  Int      @default(0) // Recu en centimes (montant recu par l'admin)
+  asOfDate  DateTime @default(now())
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  admin User @relation(fields: [adminId], references: [id])
+
+  @@unique([adminId, currency])
+  @@index([adminId])
+  @@index([currency])
+}
+
+// ============================================
+// CASHFLOW PROJECTION
+// ============================================
+
+model CashflowProjection {
+  id         String   @id @default(cuid())
+  date       DateTime
+  currency   String // EUR, MAD, USD
+  type       String // INFLOW, OUTFLOW
+  category   String // STUDENT_PAYMENT, MENTOR_PAYMENT, PROFESSOR_PAYMENT, EXPENSE, etc.
+  amount     Int // En centimes
+  confidence String   @default("CONFIRMED") // CONFIRMED, PROBABLE, ESTIMATED
+
+  // Références
+  scheduleId         String?
+  missionId          String?
+  expenseId          String?
+  recurringExpenseId String?
+
+  notes     String?  @db.Text
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  schedule         PaymentSchedule?  @relation(fields: [scheduleId], references: [id])
+  mission          Mission?          @relation(fields: [missionId], references: [id])
+  expense          Expense?          @relation(fields: [expenseId], references: [id])
+  recurringExpense RecurringExpense? @relation(fields: [recurringExpenseId], references: [id])
+
+  @@index([date])
+  @@index([currency])
+  @@index([type])
+  @@index([category])
+  @@index([confidence])
+  @@index([scheduleId])
+  @@index([missionId])
+  @@index([expenseId])
+  @@index([recurringExpenseId])
 }

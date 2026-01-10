@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -25,65 +25,52 @@ import {
   ArrowRight,
   X,
   Building2,
+  Loader2,
 } from "lucide-react";
 
-// Mock data
-const mentors = [
-  { id: "1", name: "Sophie Martin", specialties: ["HEC", "ESSEC", "ESCP"] },
-  { id: "2", name: "Jean Lefèvre", specialties: ["INSEAD", "LBS", "MBA"] },
-  { id: "3", name: "Marie Dubois", specialties: ["MiM", "MIF", "Sciences Po"] },
-];
+// Types
+interface Mentor {
+  id: string;
+  userId: string;
+  name: string;
+  email: string;
+  specialties: string[];
+}
 
-const professorsQuant = [
-  { id: "1", name: "Prof. Martin", availability: "Lun-Mer-Ven" },
-  { id: "2", name: "Prof. Durand", availability: "Mar-Jeu" },
-];
+interface Professor {
+  id: string;
+  userId: string;
+  name: string;
+  email: string;
+  type: string;
+}
 
-const professorsVerbal = [
-  { id: "1", name: "Prof. Laurent", availability: "Lun-Mer" },
-  { id: "2", name: "Prof. Petit", availability: "Mar-Jeu-Sam" },
-];
+interface SchoolProgram {
+  id: string;
+  name: string;
+  type: string;
+}
 
-const schools = [
-  { id: "1", name: "HEC Paris", country: "France", programs: ["MiM", "MIF", "MBA"] },
-  { id: "2", name: "ESSEC", country: "France", programs: ["MiM", "MIF"] },
-  { id: "3", name: "ESCP", country: "France", programs: ["MiM", "MIF", "MEB"] },
-  { id: "4", name: "INSEAD", country: "France", programs: ["MBA"] },
-  { id: "5", name: "London Business School", country: "UK", programs: ["MiM", "MIF", "MBA"] },
-  { id: "6", name: "IE Business School", country: "Spain", programs: ["MiM", "MIF"] },
-];
+interface School {
+  id: string;
+  name: string;
+  country: string;
+  programs: SchoolProgram[];
+}
 
-const packs = [
-  {
-    id: "ELITE_PREP",
-    name: "Elite Prep",
-    description: "Préparation complète aux tests (GMAT/GRE/TAGE MAGE)",
-    basePrice: 500000, // In cents
-    includes: ["Cours Quant", "Cours Verbal", "Tests blancs", "Suivi mentor"],
-    isAddon: false,
-  },
-  {
-    id: "PREMIUM_ACCESS",
-    name: "Premium Access",
-    description: "Accompagnement dossier complet + préparation oraux",
-    basePrice: 650000,
-    includes: ["Essays", "CV", "Lettres de motivation", "Prep oraux", "Suivi mentor"],
-    isAddon: false,
-  },
-  {
-    id: "ORAL_MASTERY",
-    name: "Oral Mastery",
-    description: "Préparation intensive aux entretiens d'admission",
-    basePrice: 200000,
-    includes: ["Simulations d'oraux", "Coaching individuel", "Feedback personnalisé"],
-    isAddon: true,
-  },
-];
+interface Pack {
+  id: string;
+  name: string;
+  displayName: string;
+  description: string | null;
+  price: number;
+  geography: string | null;
+  isAddon: boolean;
+}
 
 type Step = 1 | 2 | 3 | 4;
 
 interface FormData {
-  // Step 1: Personal info
   firstName: string;
   lastName: string;
   email: string;
@@ -92,18 +79,12 @@ interface FormData {
   nationality: string;
   currentFormation: string;
   linkedinUrl: string;
-
-  // Step 2: Schools
   selectedSchools: { schoolId: string; programId: string; priority: number }[];
-
-  // Step 3: Packs & Team
   selectedPacks: { packId: string; customPrice: number }[];
   mentorId: string;
   professorQuantId: string;
   professorVerbalId: string;
   testType: string;
-
-  // Step 4: Review
   internalNotes: string;
 }
 
@@ -111,6 +92,16 @@ export function OnboardingWizard() {
   const router = useRouter();
   const [step, setStep] = useState<Step>(1);
   const [loading, setLoading] = useState(false);
+  const [dataLoading, setDataLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  // Data from API
+  const [mentors, setMentors] = useState<Mentor[]>([]);
+  const [professorsQuant, setProfessorsQuant] = useState<Professor[]>([]);
+  const [professorsVerbal, setProfessorsVerbal] = useState<Professor[]>([]);
+  const [schools, setSchools] = useState<School[]>([]);
+  const [packs, setPacks] = useState<Pack[]>([]);
+
   const [formData, setFormData] = useState<FormData>({
     firstName: "",
     lastName: "",
@@ -129,6 +120,49 @@ export function OnboardingWizard() {
     internalNotes: "",
   });
 
+  // Fetch data on mount
+  useEffect(() => {
+    async function fetchData() {
+      setDataLoading(true);
+      try {
+        const [mentorsRes, quantRes, verbalRes, schoolsRes, packsRes] =
+          await Promise.all([
+            fetch("/api/mentors"),
+            fetch("/api/professors?type=QUANT"),
+            fetch("/api/professors?type=VERBAL"),
+            fetch("/api/schools"),
+            fetch("/api/packs"),
+          ]);
+
+        if (mentorsRes.ok) {
+          const data = await mentorsRes.json();
+          setMentors(data.mentors || []);
+        }
+        if (quantRes.ok) {
+          const data = await quantRes.json();
+          setProfessorsQuant(data.professors || []);
+        }
+        if (verbalRes.ok) {
+          const data = await verbalRes.json();
+          setProfessorsVerbal(data.professors || []);
+        }
+        if (schoolsRes.ok) {
+          const data = await schoolsRes.json();
+          setSchools(data.schools || []);
+        }
+        if (packsRes.ok) {
+          const data = await packsRes.json();
+          setPacks(data.packs || []);
+        }
+      } catch (err) {
+        console.error("Error fetching data:", err);
+      } finally {
+        setDataLoading(false);
+      }
+    }
+    fetchData();
+  }, []);
+
   const steps = [
     { number: 1, title: "Informations", icon: User },
     { number: 2, title: "Écoles cibles", icon: GraduationCap },
@@ -141,25 +175,72 @@ export function OnboardingWizard() {
   };
 
   const nextStep = () => {
+    // Validate current step
+    if (step === 1) {
+      if (!formData.email || !formData.firstName || !formData.lastName) {
+        setError("Veuillez remplir tous les champs obligatoires");
+        return;
+      }
+    }
+    setError(null);
     if (step < 4) setStep((step + 1) as Step);
   };
 
   const prevStep = () => {
+    setError(null);
     if (step > 1) setStep((step - 1) as Step);
   };
 
   const handleSubmit = async () => {
     setLoading(true);
+    setError(null);
+
     try {
-      // API call to create student
-      console.log("Creating student:", formData);
-      
-      // Simulate API call
-      await new Promise((resolve) => setTimeout(resolve, 2000));
-      
-      router.push("/students");
-    } catch (error) {
-      console.error("Error creating student:", error);
+      const response = await fetch("/api/students", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          personalInfo: {
+            firstName: formData.firstName,
+            lastName: formData.lastName,
+            email: formData.email,
+            phone: formData.phone,
+            dateOfBirth: formData.dateOfBirth || null,
+            nationality: formData.nationality,
+            currentFormation: formData.currentFormation,
+            linkedinUrl: formData.linkedinUrl,
+          },
+          packs: formData.selectedPacks.map((p) => ({
+            packId: p.packId,
+            customPrice: p.customPrice,
+            selected: true,
+            config: { testType: formData.testType },
+          })),
+          team: {
+            mentorId: formData.mentorId || null,
+            professorQuantId: formData.professorQuantId || null,
+            professorVerbalId: formData.professorVerbalId || null,
+          },
+          schools: formData.selectedSchools.map((s) => ({
+            schoolId: s.schoolId,
+            programId: s.programId,
+            priority: s.priority,
+          })),
+          internalNotes: formData.internalNotes,
+        }),
+      });
+
+      if (!response.ok) {
+        const data = await response.json();
+        throw new Error(data.error || "Erreur lors de la création");
+      }
+
+      const data = await response.json();
+      router.push(`/students/${data.student.id}`);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Erreur inconnue");
     } finally {
       setLoading(false);
     }
@@ -198,7 +279,7 @@ export function OnboardingWizard() {
       });
     } else {
       updateFormData({
-        selectedPacks: [...formData.selectedPacks, { packId, customPrice: pack.basePrice }],
+        selectedPacks: [...formData.selectedPacks, { packId, customPrice: pack.price }],
       });
     }
   };
@@ -212,6 +293,14 @@ export function OnboardingWizard() {
   };
 
   const totalPrice = formData.selectedPacks.reduce((acc, p) => acc + p.customPrice, 0);
+
+  if (dataLoading) {
+    return (
+      <div className="flex items-center justify-center min-h-[400px]">
+        <Loader2 className="h-8 w-8 animate-spin text-performup-blue" />
+      </div>
+    );
+  }
 
   return (
     <div className="max-w-4xl mx-auto">
@@ -261,6 +350,13 @@ export function OnboardingWizard() {
           ))}
         </div>
       </div>
+
+      {/* Error message */}
+      {error && (
+        <div className="mb-4 p-4 rounded-lg bg-error/10 border border-error/20 text-error text-sm">
+          {error}
+        </div>
+      )}
 
       {/* Step content */}
       <Card>
@@ -382,52 +478,62 @@ export function OnboardingWizard() {
                 détermine la priorité.
               </p>
 
-              <div className="grid gap-4">
-                {schools.map((school) => (
-                  <Card key={school.id} className="overflow-hidden">
-                    <CardContent className="p-4">
-                      <div className="flex items-start gap-4">
-                        <div className="flex h-12 w-12 items-center justify-center rounded-lg bg-muted">
-                          <Building2 className="h-6 w-6 text-muted-foreground" />
-                        </div>
-                        <div className="flex-1">
-                          <div className="flex items-center gap-2 mb-2">
-                            <span className="font-medium">{school.name}</span>
-                            <Badge variant="outline">{school.country}</Badge>
+              {schools.length === 0 ? (
+                <div className="text-center py-8">
+                  <Building2 className="h-12 w-12 mx-auto text-muted-foreground mb-4" />
+                  <p className="text-muted-foreground">Aucune école disponible</p>
+                  <p className="text-sm text-muted-foreground">
+                    Ajoutez des écoles depuis le panneau d&apos;administration
+                  </p>
+                </div>
+              ) : (
+                <div className="grid gap-4">
+                  {schools.map((school) => (
+                    <Card key={school.id} className="overflow-hidden">
+                      <CardContent className="p-4">
+                        <div className="flex items-start gap-4">
+                          <div className="flex h-12 w-12 items-center justify-center rounded-lg bg-muted">
+                            <Building2 className="h-6 w-6 text-muted-foreground" />
                           </div>
-                          <div className="flex flex-wrap gap-2">
-                            {school.programs.map((program) => {
-                              const isSelected = formData.selectedSchools.some(
-                                (s) => s.schoolId === school.id && s.programId === program
-                              );
-                              const priority = formData.selectedSchools.find(
-                                (s) => s.schoolId === school.id && s.programId === program
-                              )?.priority;
+                          <div className="flex-1">
+                            <div className="flex items-center gap-2 mb-2">
+                              <span className="font-medium">{school.name}</span>
+                              <Badge variant="outline">{school.country}</Badge>
+                            </div>
+                            <div className="flex flex-wrap gap-2">
+                              {school.programs.map((program) => {
+                                const isSelected = formData.selectedSchools.some(
+                                  (s) => s.schoolId === school.id && s.programId === program.id
+                                );
+                                const priority = formData.selectedSchools.find(
+                                  (s) => s.schoolId === school.id && s.programId === program.id
+                                )?.priority;
 
-                              return (
-                                <Button
-                                  key={program}
-                                  variant={isSelected ? "default" : "outline"}
-                                  size="sm"
-                                  onClick={() => toggleSchool(school.id, program)}
-                                  className="relative"
-                                >
-                                  {program}
-                                  {isSelected && priority && (
-                                    <span className="absolute -top-2 -right-2 flex h-5 w-5 items-center justify-center rounded-full bg-performup-gold text-[10px] font-bold text-white">
-                                      {priority}
-                                    </span>
-                                  )}
-                                </Button>
-                              );
-                            })}
+                                return (
+                                  <Button
+                                    key={program.id}
+                                    variant={isSelected ? "default" : "outline"}
+                                    size="sm"
+                                    onClick={() => toggleSchool(school.id, program.id)}
+                                    className="relative"
+                                  >
+                                    {program.name} ({program.type})
+                                    {isSelected && priority && (
+                                      <span className="absolute -top-2 -right-2 flex h-5 w-5 items-center justify-center rounded-full bg-performup-gold text-[10px] font-bold text-white">
+                                        {priority}
+                                      </span>
+                                    )}
+                                  </Button>
+                                );
+                              })}
+                            </div>
                           </div>
                         </div>
-                      </div>
-                    </CardContent>
-                  </Card>
-                ))}
-              </div>
+                      </CardContent>
+                    </Card>
+                  ))}
+                </div>
+              )}
 
               {formData.selectedSchools.length > 0 && (
                 <div className="rounded-lg bg-muted p-4">
@@ -435,10 +541,11 @@ export function OnboardingWizard() {
                   <div className="flex flex-wrap gap-2">
                     {formData.selectedSchools.map((s, index) => {
                       const school = schools.find((sch) => sch.id === s.schoolId);
+                      const program = school?.programs.find((p) => p.id === s.programId);
                       return (
                         <Badge key={`${s.schoolId}-${s.programId}`} variant="secondary" className="gap-2">
                           <span className="font-bold text-performup-gold">{index + 1}</span>
-                          {school?.name} - {s.programId}
+                          {school?.name} - {program?.name}
                           <button
                             onClick={() => toggleSchool(s.schoolId, s.programId)}
                             className="hover:text-error"
@@ -457,85 +564,245 @@ export function OnboardingWizard() {
           {/* Step 3: Pack & Team */}
           {step === 3 && (
             <div className="space-y-8">
-              {/* Test type */}
-              <div className="space-y-2">
-                <Label>Type de test</Label>
-                <Select
-                  value={formData.testType}
-                  onValueChange={(value) => updateFormData({ testType: value })}
-                >
-                  <SelectTrigger>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="GMAT">GMAT</SelectItem>
-                    <SelectItem value="GRE">GRE</SelectItem>
-                    <SelectItem value="TAGE_MAGE">TAGE MAGE</SelectItem>
-                  </SelectContent>
-                </Select>
+              {/* Elite Prep - Test type */}
+              <div className="space-y-4">
+                <div>
+                  <h4 className="font-medium mb-1 flex items-center gap-2">
+                    <span className="flex h-6 w-6 items-center justify-center rounded bg-performup-blue text-white text-xs font-bold">1</span>
+                    Pack Test (Elite Prep)
+                  </h4>
+                  <p className="text-sm text-muted-foreground">Préparation aux tests standardisés</p>
+                </div>
+                {packs.filter((p) => p.name.includes("ELITE_PREP")).length === 0 ? (
+                  <p className="text-sm text-muted-foreground">Aucun pack test disponible</p>
+                ) : (
+                  <div className="grid gap-3 md:grid-cols-3">
+                    {packs
+                      .filter((p) => p.name.includes("ELITE_PREP"))
+                      .map((pack) => {
+                        const isSelected = formData.selectedPacks.some((p) => p.packId === pack.id);
+                        const selectedPack = formData.selectedPacks.find((p) => p.packId === pack.id);
+
+                        return (
+                          <Card
+                            key={pack.id}
+                            className={cn(
+                              "cursor-pointer transition-all hover:border-performup-blue/50",
+                              isSelected && "ring-2 ring-performup-blue bg-performup-blue/5"
+                            )}
+                            onClick={() => togglePack(pack.id)}
+                          >
+                            <CardContent className="p-4">
+                              <div className="flex items-start gap-3">
+                                <Checkbox checked={isSelected} />
+                                <div className="flex-1 min-w-0">
+                                  <span className="font-medium text-sm">{pack.displayName.replace("Elite Prep - ", "")}</span>
+                                  {isSelected && (
+                                    <div className="mt-2" onClick={(e) => e.stopPropagation()}>
+                                      <Label className="text-xs text-muted-foreground">Prix</Label>
+                                      <Input
+                                        type="number"
+                                        value={selectedPack?.customPrice ? selectedPack.customPrice / 100 : ""}
+                                        onChange={(e) =>
+                                          updatePackPrice(pack.id, Math.round(parseFloat(e.target.value) * 100))
+                                        }
+                                        className="h-8 text-right"
+                                        placeholder="0"
+                                      />
+                                    </div>
+                                  )}
+                                </div>
+                              </div>
+                            </CardContent>
+                          </Card>
+                        );
+                      })}
+                  </div>
+                )}
               </div>
 
-              {/* Packs */}
+              {/* Premium Access - Dossier + Oraux */}
               <div className="space-y-4">
-                <Label>Packs</Label>
-                <div className="grid gap-4">
-                  {packs.map((pack) => {
-                    const isSelected = formData.selectedPacks.some((p) => p.packId === pack.id);
-                    const selectedPack = formData.selectedPacks.find((p) => p.packId === pack.id);
-
-                    return (
-                      <Card
-                        key={pack.id}
-                        className={cn(
-                          "cursor-pointer transition-all",
-                          isSelected && "ring-2 ring-performup-blue"
-                        )}
-                        onClick={() => togglePack(pack.id)}
-                      >
-                        <CardContent className="p-4">
-                          <div className="flex items-start gap-4">
-                            <Checkbox checked={isSelected} />
-                            <div className="flex-1">
-                              <div className="flex items-center gap-2 mb-1">
-                                <span className="font-medium">{pack.name}</span>
-                                {pack.isAddon && <Badge variant="gold">Add-on</Badge>}
-                              </div>
-                              <p className="text-sm text-muted-foreground mb-2">
-                                {pack.description}
-                              </p>
-                              <div className="flex flex-wrap gap-1">
-                                {pack.includes.map((item) => (
-                                  <Badge key={item} variant="outline" className="text-xs">
-                                    {item}
-                                  </Badge>
-                                ))}
-                              </div>
-                            </div>
-                            <div className="text-right">
-                              {isSelected ? (
-                                <div className="space-y-1" onClick={(e) => e.stopPropagation()}>
-                                  <Label className="text-xs">Prix personnalisé</Label>
-                                  <Input
-                                    type="number"
-                                    value={selectedPack?.customPrice ? selectedPack.customPrice / 100 : ""}
-                                    onChange={(e) =>
-                                      updatePackPrice(pack.id, Math.round(parseFloat(e.target.value) * 100))
-                                    }
-                                    className="w-24 text-right"
-                                  />
-                                </div>
-                              ) : (
-                                <span className="text-lg font-bold">
-                                  {formatCurrency(pack.basePrice)}
-                                </span>
-                              )}
-                            </div>
-                          </div>
-                        </CardContent>
-                      </Card>
-                    );
-                  })}
+                <div>
+                  <h4 className="font-medium mb-1 flex items-center gap-2">
+                    <span className="flex h-6 w-6 items-center justify-center rounded bg-performup-gold text-white text-xs font-bold">2</span>
+                    Pack Dossier (Premium Access)
+                  </h4>
+                  <p className="text-sm text-muted-foreground">Accompagnement complet dossier et oraux</p>
                 </div>
+                {packs.filter((p) => p.name.includes("PREMIUM_ACCESS")).length === 0 ? (
+                  <p className="text-sm text-muted-foreground">Aucun pack dossier disponible</p>
+                ) : (
+                  <div className="grid gap-3 md:grid-cols-2">
+                    {packs
+                      .filter((p) => p.name.includes("PREMIUM_ACCESS"))
+                      .map((pack) => {
+                        const isSelected = formData.selectedPacks.some((p) => p.packId === pack.id);
+                        const selectedPack = formData.selectedPacks.find((p) => p.packId === pack.id);
+                        const geoFlags: Record<string, string> = { France: "🇫🇷", UK: "🇬🇧" };
+
+                        return (
+                          <Card
+                            key={pack.id}
+                            className={cn(
+                              "cursor-pointer transition-all hover:border-performup-gold/50",
+                              isSelected && "ring-2 ring-performup-gold bg-performup-gold/5"
+                            )}
+                            onClick={() => togglePack(pack.id)}
+                          >
+                            <CardContent className="p-4">
+                              <div className="flex items-start gap-3">
+                                <Checkbox checked={isSelected} />
+                                <div className="flex-1 min-w-0">
+                                  <div className="flex items-center gap-2">
+                                    <span className="text-lg">{geoFlags[pack.geography || ""] || "🌍"}</span>
+                                    <span className="font-medium text-sm">{pack.geography}</span>
+                                  </div>
+                                  <p className="text-xs text-muted-foreground mt-1">{pack.description}</p>
+                                  {isSelected && (
+                                    <div className="mt-3" onClick={(e) => e.stopPropagation()}>
+                                      <Label className="text-xs text-muted-foreground">Prix personnalisé</Label>
+                                      <Input
+                                        type="number"
+                                        value={selectedPack?.customPrice ? selectedPack.customPrice / 100 : ""}
+                                        onChange={(e) =>
+                                          updatePackPrice(pack.id, Math.round(parseFloat(e.target.value) * 100))
+                                        }
+                                        className="h-8 text-right"
+                                        placeholder="0"
+                                      />
+                                    </div>
+                                  )}
+                                </div>
+                              </div>
+                            </CardContent>
+                          </Card>
+                        );
+                      })}
+                  </div>
+                )}
+              </div>
+
+              {/* Oral Mastery - Oraux seulement */}
+              <div className="space-y-4">
+                <div>
+                  <h4 className="font-medium mb-1 flex items-center gap-2">
+                    <span className="flex h-6 w-6 items-center justify-center rounded bg-success text-white text-xs font-bold">3</span>
+                    Pack Oraux (Oral Mastery)
+                  </h4>
+                  <p className="text-sm text-muted-foreground">Préparation oraux uniquement</p>
+                </div>
+                {packs.filter((p) => p.name.includes("ORAL_MASTERY")).length === 0 ? (
+                  <p className="text-sm text-muted-foreground">Aucun pack oraux disponible</p>
+                ) : (
+                  <div className="grid gap-3 md:grid-cols-2">
+                    {packs
+                      .filter((p) => p.name.includes("ORAL_MASTERY"))
+                      .map((pack) => {
+                        const isSelected = formData.selectedPacks.some((p) => p.packId === pack.id);
+                        const selectedPack = formData.selectedPacks.find((p) => p.packId === pack.id);
+                        const geoFlags: Record<string, string> = { France: "🇫🇷", UK: "🇬🇧" };
+
+                        return (
+                          <Card
+                            key={pack.id}
+                            className={cn(
+                              "cursor-pointer transition-all hover:border-success/50",
+                              isSelected && "ring-2 ring-success bg-success/5"
+                            )}
+                            onClick={() => togglePack(pack.id)}
+                          >
+                            <CardContent className="p-4">
+                              <div className="flex items-start gap-3">
+                                <Checkbox checked={isSelected} />
+                                <div className="flex-1 min-w-0">
+                                  <div className="flex items-center gap-2">
+                                    <span className="text-lg">{geoFlags[pack.geography || ""] || "🌍"}</span>
+                                    <span className="font-medium text-sm">{pack.geography}</span>
+                                  </div>
+                                  {isSelected && (
+                                    <div className="mt-3" onClick={(e) => e.stopPropagation()}>
+                                      <Label className="text-xs text-muted-foreground">Prix personnalisé</Label>
+                                      <Input
+                                        type="number"
+                                        value={selectedPack?.customPrice ? selectedPack.customPrice / 100 : ""}
+                                        onChange={(e) =>
+                                          updatePackPrice(pack.id, Math.round(parseFloat(e.target.value) * 100))
+                                        }
+                                        className="h-8 text-right"
+                                        placeholder="0"
+                                      />
+                                    </div>
+                                  )}
+                                </div>
+                              </div>
+                            </CardContent>
+                          </Card>
+                        );
+                      })}
+                  </div>
+                )}
+              </div>
+
+              {/* Add-ons */}
+              <div className="space-y-4">
+                <div>
+                  <h4 className="font-medium mb-1 flex items-center gap-2">
+                    <span className="flex h-6 w-6 items-center justify-center rounded bg-warning text-white text-xs font-bold">+</span>
+                    Add-ons (autres géographies)
+                  </h4>
+                  <p className="text-sm text-muted-foreground">Compléments pour Espagne, Italie, Suisse</p>
+                </div>
+                {packs.filter((p) => p.isAddon).length === 0 ? (
+                  <p className="text-sm text-muted-foreground">Aucun add-on disponible</p>
+                ) : (
+                  <div className="grid gap-3 md:grid-cols-3">
+                    {packs
+                      .filter((p) => p.isAddon)
+                      .map((pack) => {
+                        const isSelected = formData.selectedPacks.some((p) => p.packId === pack.id);
+                        const selectedPack = formData.selectedPacks.find((p) => p.packId === pack.id);
+                        const geoFlags: Record<string, string> = { Espagne: "🇪🇸", Italie: "🇮🇹", Suisse: "🇨🇭" };
+
+                        return (
+                          <Card
+                            key={pack.id}
+                            className={cn(
+                              "cursor-pointer transition-all hover:border-warning/50",
+                              isSelected && "ring-2 ring-warning bg-warning/5"
+                            )}
+                            onClick={() => togglePack(pack.id)}
+                          >
+                            <CardContent className="p-4">
+                              <div className="flex items-start gap-3">
+                                <Checkbox checked={isSelected} />
+                                <div className="flex-1 min-w-0">
+                                  <div className="flex items-center gap-2">
+                                    <span className="text-lg">{geoFlags[pack.geography || ""] || "🌍"}</span>
+                                    <span className="font-medium text-sm">{pack.geography}</span>
+                                  </div>
+                                  {isSelected && (
+                                    <div className="mt-3" onClick={(e) => e.stopPropagation()}>
+                                      <Label className="text-xs text-muted-foreground">Prix</Label>
+                                      <Input
+                                        type="number"
+                                        value={selectedPack?.customPrice ? selectedPack.customPrice / 100 : ""}
+                                        onChange={(e) =>
+                                          updatePackPrice(pack.id, Math.round(parseFloat(e.target.value) * 100))
+                                        }
+                                        className="h-8 text-right"
+                                        placeholder="0"
+                                      />
+                                    </div>
+                                  )}
+                                </div>
+                              </div>
+                            </CardContent>
+                          </Card>
+                        );
+                      })}
+                  </div>
+                )}
               </div>
 
               {/* Team */}
@@ -543,13 +810,14 @@ export function OnboardingWizard() {
                 <div className="space-y-2">
                   <Label>Mentor</Label>
                   <Select
-                    value={formData.mentorId}
-                    onValueChange={(value) => updateFormData({ mentorId: value })}
+                    value={formData.mentorId || "_none"}
+                    onValueChange={(value) => updateFormData({ mentorId: value === "_none" ? "" : value })}
                   >
                     <SelectTrigger>
                       <SelectValue placeholder="Sélectionner un mentor" />
                     </SelectTrigger>
                     <SelectContent>
+                      <SelectItem value="_none">Aucun</SelectItem>
                       {mentors.map((mentor) => (
                         <SelectItem key={mentor.id} value={mentor.id}>
                           {mentor.name}
@@ -562,13 +830,14 @@ export function OnboardingWizard() {
                 <div className="space-y-2">
                   <Label>Professeur Quant</Label>
                   <Select
-                    value={formData.professorQuantId}
-                    onValueChange={(value) => updateFormData({ professorQuantId: value })}
+                    value={formData.professorQuantId || "_none"}
+                    onValueChange={(value) => updateFormData({ professorQuantId: value === "_none" ? "" : value })}
                   >
                     <SelectTrigger>
                       <SelectValue placeholder="Sélectionner" />
                     </SelectTrigger>
                     <SelectContent>
+                      <SelectItem value="_none">Aucun</SelectItem>
                       {professorsQuant.map((prof) => (
                         <SelectItem key={prof.id} value={prof.id}>
                           {prof.name}
@@ -581,13 +850,14 @@ export function OnboardingWizard() {
                 <div className="space-y-2">
                   <Label>Professeur Verbal</Label>
                   <Select
-                    value={formData.professorVerbalId}
-                    onValueChange={(value) => updateFormData({ professorVerbalId: value })}
+                    value={formData.professorVerbalId || "_none"}
+                    onValueChange={(value) => updateFormData({ professorVerbalId: value === "_none" ? "" : value })}
                   >
                     <SelectTrigger>
                       <SelectValue placeholder="Sélectionner" />
                     </SelectTrigger>
                     <SelectContent>
+                      <SelectItem value="_none">Aucun</SelectItem>
                       {professorsVerbal.map((prof) => (
                         <SelectItem key={prof.id} value={prof.id}>
                           {prof.name}
@@ -654,17 +924,22 @@ export function OnboardingWizard() {
                   </CardHeader>
                   <CardContent>
                     <div className="space-y-2">
-                      {formData.selectedSchools.map((s, index) => {
-                        const school = schools.find((sch) => sch.id === s.schoolId);
-                        return (
-                          <div key={`${s.schoolId}-${s.programId}`} className="flex items-center gap-2 text-sm">
-                            <span className="flex h-5 w-5 items-center justify-center rounded-full bg-performup-gold text-[10px] font-bold text-white">
-                              {index + 1}
-                            </span>
-                            <span>{school?.name} - {s.programId}</span>
-                          </div>
-                        );
-                      })}
+                      {formData.selectedSchools.length === 0 ? (
+                        <p className="text-sm text-muted-foreground">Aucune école sélectionnée</p>
+                      ) : (
+                        formData.selectedSchools.map((s, index) => {
+                          const school = schools.find((sch) => sch.id === s.schoolId);
+                          const program = school?.programs.find((p) => p.id === s.programId);
+                          return (
+                            <div key={`${s.schoolId}-${s.programId}`} className="flex items-center gap-2 text-sm">
+                              <span className="flex h-5 w-5 items-center justify-center rounded-full bg-performup-gold text-[10px] font-bold text-white">
+                                {index + 1}
+                              </span>
+                              <span>{school?.name} - {program?.name}</span>
+                            </div>
+                          );
+                        })
+                      )}
                     </div>
                   </CardContent>
                 </Card>
@@ -678,19 +953,25 @@ export function OnboardingWizard() {
                   </CardHeader>
                   <CardContent>
                     <div className="space-y-2">
-                      {formData.selectedPacks.map((p) => {
-                        const pack = packs.find((pk) => pk.id === p.packId);
-                        return (
-                          <div key={p.packId} className="flex items-center justify-between text-sm">
-                            <span>{pack?.name}</span>
-                            <span className="font-medium">{formatCurrency(p.customPrice)}</span>
+                      {formData.selectedPacks.length === 0 ? (
+                        <p className="text-sm text-muted-foreground">Aucun pack sélectionné</p>
+                      ) : (
+                        <>
+                          {formData.selectedPacks.map((p) => {
+                            const pack = packs.find((pk) => pk.id === p.packId);
+                            return (
+                              <div key={p.packId} className="flex items-center justify-between text-sm">
+                                <span>{pack?.displayName}</span>
+                                <span className="font-medium">{formatCurrency(p.customPrice)}</span>
+                              </div>
+                            );
+                          })}
+                          <div className="border-t pt-2 flex items-center justify-between font-medium">
+                            <span>Total</span>
+                            <span className="text-performup-blue">{formatCurrency(totalPrice)}</span>
                           </div>
-                        );
-                      })}
-                      <div className="border-t pt-2 flex items-center justify-between font-medium">
-                        <span>Total</span>
-                        <span className="text-performup-blue">{formatCurrency(totalPrice)}</span>
-                      </div>
+                        </>
+                      )}
                     </div>
                   </CardContent>
                 </Card>
@@ -752,23 +1033,19 @@ export function OnboardingWizard() {
                   <ul className="space-y-2 text-sm">
                     <li className="flex items-center gap-2">
                       <CheckCircle2 className="h-4 w-4 text-success" />
-                      Compte utilisateur avec mot de passe temporaire
+                      Compte utilisateur avec rôle Étudiant
                     </li>
                     <li className="flex items-center gap-2">
                       <CheckCircle2 className="h-4 w-4 text-success" />
-                      Drive étudiant avec structure de dossiers personnalisée
+                      Profil étudiant avec les informations saisies
                     </li>
                     <li className="flex items-center gap-2">
                       <CheckCircle2 className="h-4 w-4 text-success" />
-                      Documents automatiquement déployés selon le pack
+                      Attribution des packs et de l&apos;équipe pédagogique
                     </li>
                     <li className="flex items-center gap-2">
                       <CheckCircle2 className="h-4 w-4 text-success" />
-                      Permissions configurées pour l&apos;équipe pédagogique
-                    </li>
-                    <li className="flex items-center gap-2">
-                      <CheckCircle2 className="h-4 w-4 text-success" />
-                      Email d&apos;invitation envoyé à l&apos;étudiant
+                      Association aux écoles et programmes ciblés
                     </li>
                   </ul>
                 </CardContent>
@@ -791,7 +1068,8 @@ export function OnboardingWizard() {
             <ArrowRight className="ml-2 h-4 w-4" />
           </Button>
         ) : (
-          <Button onClick={handleSubmit} loading={loading}>
+          <Button onClick={handleSubmit} disabled={loading}>
+            {loading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
             <CheckCircle2 className="mr-2 h-4 w-4" />
             Créer l&apos;étudiant
           </Button>
@@ -800,4 +1078,3 @@ export function OnboardingWizard() {
     </div>
   );
 }
-

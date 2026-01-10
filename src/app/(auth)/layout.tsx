@@ -1,3 +1,5 @@
+import Image from "next/image";
+
 export default function AuthLayout({
   children,
 }: {
@@ -38,35 +40,15 @@ export default function AuthLayout({
         <div className="relative z-10 flex flex-col justify-between p-12 text-white">
           <div>
             <div className="flex items-center gap-3 mb-16">
-              <div className="h-12 w-12 rounded-xl bg-white/20 backdrop-blur flex items-center justify-center">
-                <svg
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  xmlns="http://www.w3.org/2000/svg"
-                  className="w-8 h-8"
-                >
-                  <path
-                    d="M7 4h6a5 5 0 0 1 0 10H7V4z"
-                    stroke="white"
-                    strokeWidth="2"
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    fill="none"
-                  />
-                  <path
-                    d="M7 20V14"
-                    stroke="white"
-                    strokeWidth="2"
-                    strokeLinecap="round"
-                  />
-                  <path
-                    d="M17 12l3-3m0 0l-3-3m3 3h-5"
-                    stroke="#C8B38D"
-                    strokeWidth="2"
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                  />
-                </svg>
+              <div className="h-16 w-16 rounded-xl bg-white/95 backdrop-blur flex items-center justify-center p-2">
+                <Image
+                  src="/logo.png"
+                  alt="PerformUp Logo"
+                  width={52}
+                  height={44}
+                  className="object-contain"
+                  priority
+                />
               </div>
               <span className="text-2xl font-display font-semibold">
                 Perform<span className="text-performup-gold">Up</span>
@@ -115,4 +97,3 @@ export default function AuthLayout({
     </div>
   );
 }
-

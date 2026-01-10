@@ -30,12 +30,17 @@ export default function LoginPage() {
         password,
       });
 
+      console.log("Login result:", result);
+
       if (result.error) {
+        console.error("Login error:", result.error);
         setError(result.error.message || "Identifiants incorrects");
       } else {
         router.push("/dashboard");
+        router.refresh();
       }
-    } catch {
+    } catch (err) {
+      console.error("Login exception:", err);
       setError("Une erreur est survenue. Veuillez réessayer.");
     } finally {
       setLoading(false);

@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { useParams } from "next/navigation";
+import { useParams, useRouter } from "next/navigation";
 import { PageHeader } from "@/components/layout";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -11,6 +11,34 @@ import { UserAvatar } from "@/components/ui/avatar";
 import { Progress } from "@/components/ui/progress";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Separator } from "@/components/ui/separator";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import {
   formatCurrency,
   formatDate,
@@ -36,6 +64,10 @@ import {
   Building2,
   ExternalLink,
   Linkedin,
+  Loader2,
+  CreditCard,
+  Users,
+  UserX,
 } from "lucide-react";
 import {
   DropdownMenu,
@@ -176,13 +208,69 @@ interface StudentData {
     endDate: string | null;
     current: boolean;
   }>;
+  payments: Array<{
+    id: string;
+    amount: number;
+    currency: string;
+    paymentDate: string;
+    paymentMethod: string;
+    status: string;
+    referenceNumber: string | null;
+  }>;
+  paymentSchedules: Array<{
+    id: string;
+    type: string;
+    amount: number;
+    currency: string;
+    dueDate: string;
+    status: string;
+    paidAmount: number;
+  }>;
+}
+
+interface MentorOption {
+  id: string;
+  name: string;
+}
+
+interface ProfessorOption {
+  id: string;
+  name: string;
+  type: string;
 }
 
 export default function StudentDetailPage() {
   const params = useParams<{ id: string }>();
+  const router = useRouter();
   const [student, setStudent] = useState<StudentData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+
+  // Edit dialog state
+  const [editDialogOpen, setEditDialogOpen] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [editForm, setEditForm] = useState({
+    firstName: "",
+    lastName: "",
+    phone: "",
+    nationality: "",
+    currentFormation: "",
+    linkedinUrl: "",
+    programType: "MASTER",
+    status: "EN_DEMARRAGE",
+    mentorId: "",
+    professorQuantId: "",
+    professorVerbalId: "",
+    internalNotes: "",
+  });
+
+  // Team options
+  const [mentors, setMentors] = useState<MentorOption[]>([]);
+  const [professors, setProfessors] = useState<ProfessorOption[]>([]);
+
+  // Deactivate dialog
+  const [deactivateDialogOpen, setDeactivateDialogOpen] = useState(false);
+  const [deactivating, setDeactivating] = useState(false);
 
   useEffect(() => {
     async function fetchStudent() {
@@ -205,6 +293,125 @@ export default function StudentDetailPage() {
 
     fetchStudent();
   }, [params.id]);
+
+  // Fetch mentors and professors for edit form
+  useEffect(() => {
+    async function fetchTeamOptions() {
+      try {
+        const [mentorsRes, professorsRes] = await Promise.all([
+          fetch("/api/mentors"),
+          fetch("/api/professors"),
+        ]);
+
+        if (mentorsRes.ok) {
+          const data = await mentorsRes.json();
+          setMentors(data.mentors || []);
+        }
+
+        if (professorsRes.ok) {
+          const data = await professorsRes.json();
+          setProfessors(data.professors || []);
+        }
+      } catch (error) {
+        console.error("Error fetching team options:", error);
+      }
+    }
+    fetchTeamOptions();
+  }, []);
+
+  // Initialize edit form when student data is loaded
+  useEffect(() => {
+    if (student) {
+      setEditForm({
+        firstName: student.user.firstName || "",
+        lastName: student.user.lastName || "",
+        phone: student.user.phone || "",
+        nationality: student.nationality || "",
+        currentFormation: student.currentFormation || "",
+        linkedinUrl: student.linkedinUrl || "",
+        programType: student.programType || "MASTER",
+        status: student.status || "EN_DEMARRAGE",
+        mentorId: student.team.mentor?.id || "",
+        professorQuantId: student.team.professorQuant?.id || "",
+        professorVerbalId: student.team.professorVerbal?.id || "",
+        internalNotes: student.internalNotes || "",
+      });
+    }
+  }, [student]);
+
+  // Handle save student
+  const handleSaveStudent = async () => {
+    if (!student) return;
+
+    setSaving(true);
+    try {
+      const response = await fetch(`/api/students/${student.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          personalInfo: {
+            firstName: editForm.firstName,
+            lastName: editForm.lastName,
+            phone: editForm.phone,
+            nationality: editForm.nationality,
+            currentFormation: editForm.currentFormation,
+            linkedinUrl: editForm.linkedinUrl,
+            programType: editForm.programType,
+          },
+          team: {
+            mentorId: editForm.mentorId || null,
+            professorQuantId: editForm.professorQuantId || null,
+            professorVerbalId: editForm.professorVerbalId || null,
+          },
+          status: editForm.status,
+          internalNotes: editForm.internalNotes,
+        }),
+      });
+
+      if (response.ok) {
+        // Refresh student data
+        const refreshRes = await fetch(`/api/students/${student.id}`);
+        if (refreshRes.ok) {
+          const data = await refreshRes.json();
+          setStudent(data.student);
+        }
+        setEditDialogOpen(false);
+      } else {
+        const data = await response.json();
+        alert(data.error || "Erreur lors de la sauvegarde");
+      }
+    } catch (error) {
+      console.error("Error saving student:", error);
+      alert("Erreur lors de la sauvegarde");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  // Handle deactivate student
+  const handleDeactivateStudent = async () => {
+    if (!student) return;
+
+    setDeactivating(true);
+    try {
+      const response = await fetch(`/api/students/${student.id}`, {
+        method: "DELETE",
+      });
+
+      if (response.ok) {
+        router.push("/students");
+      } else {
+        const data = await response.json();
+        alert(data.error || "Erreur lors de la désactivation");
+      }
+    } catch (error) {
+      console.error("Error deactivating student:", error);
+      alert("Erreur lors de la désactivation");
+    } finally {
+      setDeactivating(false);
+      setDeactivateDialogOpen(false);
+    }
+  };
 
   if (loading) {
     return (
@@ -263,16 +470,22 @@ export default function StudentDetailPage() {
                 </Button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end">
-                <DropdownMenuItem>
+                <DropdownMenuItem onClick={() => setEditDialogOpen(true)}>
                   <Edit className="mr-2 h-4 w-4" />
-                  Modifier
+                  Modifier le profil
                 </DropdownMenuItem>
-                <DropdownMenuItem>
-                  <Mail className="mr-2 h-4 w-4" />
-                  Envoyer un email
+                <DropdownMenuItem asChild>
+                  <a href={`mailto:${student.user.email}`}>
+                    <Mail className="mr-2 h-4 w-4" />
+                    Envoyer un email
+                  </a>
                 </DropdownMenuItem>
                 <DropdownMenuSeparator />
-                <DropdownMenuItem className="text-error">
+                <DropdownMenuItem
+                  className="text-error"
+                  onClick={() => setDeactivateDialogOpen(true)}
+                >
+                  <UserX className="mr-2 h-4 w-4" />
                   Désactiver
                 </DropdownMenuItem>
               </DropdownMenuContent>
@@ -489,10 +702,11 @@ export default function StudentDetailPage() {
             <TabsList>
               <TabsTrigger value="packs">Packs</TabsTrigger>
               <TabsTrigger value="schools">Écoles</TabsTrigger>
-          <TabsTrigger value="planning">Planning</TabsTrigger>
-          <TabsTrigger value="essays">Essays</TabsTrigger>
+              <TabsTrigger value="planning">Planning</TabsTrigger>
+              <TabsTrigger value="essays">Essays</TabsTrigger>
               <TabsTrigger value="scores">Scores</TabsTrigger>
-        </TabsList>
+              <TabsTrigger value="payments">Paiements</TabsTrigger>
+            </TabsList>
 
             <TabsContent value="packs" className="space-y-4">
               {student.packs.length > 0 ? (
@@ -799,10 +1013,355 @@ export default function StudentDetailPage() {
               </CardContent>
             </Card>
               )}
-        </TabsContent>
-      </Tabs>
+            </TabsContent>
+
+            <TabsContent value="payments" className="space-y-4">
+              {/* Payment Schedules */}
+              <Card>
+                <CardHeader>
+                  <CardTitle className="text-base">Échéancier de paiement</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  {student.paymentSchedules && student.paymentSchedules.length > 0 ? (
+                    <div className="space-y-3">
+                      {student.paymentSchedules.map((schedule) => (
+                        <div
+                          key={schedule.id}
+                          className="flex items-center justify-between p-3 rounded-lg border"
+                        >
+                          <div className="flex items-center gap-3">
+                            <div className={`flex h-10 w-10 items-center justify-center rounded-lg ${
+                              schedule.status === "PAID" ? "bg-success/10" :
+                              schedule.status === "OVERDUE" ? "bg-error/10" : "bg-muted"
+                            }`}>
+                              <CreditCard className={`h-5 w-5 ${
+                                schedule.status === "PAID" ? "text-success" :
+                                schedule.status === "OVERDUE" ? "text-error" : "text-muted-foreground"
+                              }`} />
+                            </div>
+                            <div>
+                              <p className="font-medium">{schedule.type}</p>
+                              <p className="text-sm text-muted-foreground">
+                                Échéance: {formatDate(new Date(schedule.dueDate))}
+                              </p>
+                            </div>
+                          </div>
+                          <div className="text-right">
+                            <p className="font-medium">{formatCurrency(schedule.amount, schedule.currency)}</p>
+                            <Badge
+                              variant={
+                                schedule.status === "PAID"
+                                  ? "success"
+                                  : schedule.status === "OVERDUE"
+                                  ? "error"
+                                  : schedule.status === "PARTIAL"
+                                  ? "warning"
+                                  : "secondary"
+                              }
+                            >
+                              {schedule.status === "PAID" ? "Payé" :
+                               schedule.status === "OVERDUE" ? "En retard" :
+                               schedule.status === "PARTIAL" ? `Partiel (${formatCurrency(schedule.paidAmount, schedule.currency)})` :
+                               "En attente"}
+                            </Badge>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <div className="text-center py-8">
+                      <CreditCard className="h-12 w-12 mx-auto text-muted-foreground mb-4" />
+                      <p className="text-muted-foreground">Aucun échéancier défini</p>
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+
+              {/* Payment History */}
+              <Card>
+                <CardHeader>
+                  <CardTitle className="text-base">Historique des paiements</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  {student.payments && student.payments.length > 0 ? (
+                    <div className="space-y-3">
+                      {student.payments.map((payment) => (
+                        <div
+                          key={payment.id}
+                          className="flex items-center justify-between p-3 rounded-lg border"
+                        >
+                          <div className="flex items-center gap-3">
+                            <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-success/10">
+                              <CheckCircle2 className="h-5 w-5 text-success" />
+                            </div>
+                            <div>
+                              <p className="font-medium">
+                                {payment.paymentMethod === "BANK_TRANSFER" ? "Virement" :
+                                 payment.paymentMethod === "CARD" ? "Carte" :
+                                 payment.paymentMethod === "CASH" ? "Espèces" :
+                                 payment.paymentMethod === "CHECK" ? "Chèque" :
+                                 payment.paymentMethod}
+                              </p>
+                              <p className="text-sm text-muted-foreground">
+                                {formatDate(new Date(payment.paymentDate))}
+                                {payment.referenceNumber && ` • Réf: ${payment.referenceNumber}`}
+                              </p>
+                            </div>
+                          </div>
+                          <div className="text-right">
+                            <p className="font-medium text-success">
+                              +{formatCurrency(payment.amount, payment.currency)}
+                            </p>
+                            <Badge variant={payment.status === "VALIDATED" ? "success" : "secondary"}>
+                              {payment.status === "VALIDATED" ? "Validé" : payment.status}
+                            </Badge>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <div className="text-center py-8">
+                      <CreditCard className="h-12 w-12 mx-auto text-muted-foreground mb-4" />
+                      <p className="text-muted-foreground">Aucun paiement enregistré</p>
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+            </TabsContent>
+          </Tabs>
         </div>
       </div>
+
+      {/* Edit Student Dialog */}
+      <Dialog open={editDialogOpen} onOpenChange={setEditDialogOpen}>
+        <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>Modifier le profil</DialogTitle>
+            <DialogDescription>
+              Modifiez les informations de l&apos;étudiant
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-6 py-4">
+            {/* Personal Info */}
+            <div className="space-y-4">
+              <h3 className="font-medium flex items-center gap-2">
+                <Users className="h-4 w-4" />
+                Informations personnelles
+              </h3>
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label htmlFor="firstName">Prénom</Label>
+                  <Input
+                    id="firstName"
+                    value={editForm.firstName}
+                    onChange={(e) => setEditForm({ ...editForm, firstName: e.target.value })}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="lastName">Nom</Label>
+                  <Input
+                    id="lastName"
+                    value={editForm.lastName}
+                    onChange={(e) => setEditForm({ ...editForm, lastName: e.target.value })}
+                  />
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label htmlFor="phone">Téléphone</Label>
+                  <Input
+                    id="phone"
+                    value={editForm.phone}
+                    onChange={(e) => setEditForm({ ...editForm, phone: e.target.value })}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="nationality">Nationalité</Label>
+                  <Input
+                    id="nationality"
+                    value={editForm.nationality}
+                    onChange={(e) => setEditForm({ ...editForm, nationality: e.target.value })}
+                  />
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label htmlFor="currentFormation">Formation actuelle</Label>
+                  <Input
+                    id="currentFormation"
+                    value={editForm.currentFormation}
+                    onChange={(e) => setEditForm({ ...editForm, currentFormation: e.target.value })}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="programType">Type de programme</Label>
+                  <Select
+                    value={editForm.programType}
+                    onValueChange={(value) => setEditForm({ ...editForm, programType: value })}
+                  >
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="MASTER">Master</SelectItem>
+                      <SelectItem value="BACHELOR">Bachelor</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="linkedinUrl">LinkedIn</Label>
+                <Input
+                  id="linkedinUrl"
+                  value={editForm.linkedinUrl}
+                  onChange={(e) => setEditForm({ ...editForm, linkedinUrl: e.target.value })}
+                  placeholder="https://linkedin.com/in/..."
+                />
+              </div>
+            </div>
+
+            <Separator />
+
+            {/* Team */}
+            <div className="space-y-4">
+              <h3 className="font-medium flex items-center gap-2">
+                <Users className="h-4 w-4" />
+                Équipe
+              </h3>
+              <div className="space-y-4">
+                <div className="space-y-2">
+                  <Label htmlFor="mentorId">Mentor</Label>
+                  <Select
+                    value={editForm.mentorId || "_none"}
+                    onValueChange={(value) => setEditForm({ ...editForm, mentorId: value === "_none" ? "" : value })}
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="Sélectionner un mentor" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="_none">Aucun</SelectItem>
+                      {mentors.map((mentor) => (
+                        <SelectItem key={mentor.id} value={mentor.id}>
+                          {mentor.name}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <Label htmlFor="professorQuantId">Professeur Quant</Label>
+                    <Select
+                      value={editForm.professorQuantId || "_none"}
+                      onValueChange={(value) => setEditForm({ ...editForm, professorQuantId: value === "_none" ? "" : value })}
+                    >
+                      <SelectTrigger>
+                        <SelectValue placeholder="Sélectionner" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="_none">Aucun</SelectItem>
+                        {professors.filter(p => p.type === "QUANT").map((prof) => (
+                          <SelectItem key={prof.id} value={prof.id}>
+                            {prof.name}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="professorVerbalId">Professeur Verbal</Label>
+                    <Select
+                      value={editForm.professorVerbalId || "_none"}
+                      onValueChange={(value) => setEditForm({ ...editForm, professorVerbalId: value === "_none" ? "" : value })}
+                    >
+                      <SelectTrigger>
+                        <SelectValue placeholder="Sélectionner" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="_none">Aucun</SelectItem>
+                        {professors.filter(p => p.type === "VERBAL").map((prof) => (
+                          <SelectItem key={prof.id} value={prof.id}>
+                            {prof.name}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <Separator />
+
+            {/* Status */}
+            <div className="space-y-4">
+              <h3 className="font-medium">Statut</h3>
+              <Select
+                value={editForm.status}
+                onValueChange={(value) => setEditForm({ ...editForm, status: value })}
+              >
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="EN_DEMARRAGE">En démarrage</SelectItem>
+                  <SelectItem value="EN_COURS">En cours</SelectItem>
+                  <SelectItem value="FINALISE">Finalisé</SelectItem>
+                  <SelectItem value="EN_PAUSE">En pause</SelectItem>
+                  <SelectItem value="SUSPENDU">Suspendu</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+
+            <Separator />
+
+            {/* Internal Notes */}
+            <div className="space-y-4">
+              <h3 className="font-medium">Notes internes</h3>
+              <Textarea
+                value={editForm.internalNotes}
+                onChange={(e) => setEditForm({ ...editForm, internalNotes: e.target.value })}
+                placeholder="Notes visibles uniquement par l'équipe..."
+                rows={4}
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setEditDialogOpen(false)}>
+              Annuler
+            </Button>
+            <Button onClick={handleSaveStudent} disabled={saving}>
+              {saving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+              Enregistrer
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Deactivate Confirmation Dialog */}
+      <AlertDialog open={deactivateDialogOpen} onOpenChange={setDeactivateDialogOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Désactiver cet étudiant ?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Cette action désactivera le compte de {student.user.name || student.user.email}.
+              L&apos;étudiant ne pourra plus se connecter et son statut sera mis à &quot;Suspendu&quot;.
+              Cette action peut être annulée en modifiant le statut de l&apos;étudiant.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Annuler</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={handleDeactivateStudent}
+              className="bg-error hover:bg-error/90"
+              disabled={deactivating}
+            >
+              {deactivating && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+              Désactiver
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </>
   );
 }

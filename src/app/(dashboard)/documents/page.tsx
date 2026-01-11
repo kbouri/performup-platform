@@ -2,6 +2,8 @@
 
 import { useState, useEffect, useCallback, useRef } from "react";
 import Image from "next/image";
+import Link from "next/link";
+import { useSearchParams } from "next/navigation";
 import { PageHeader } from "@/components/layout";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -39,7 +41,14 @@ import {
   FolderOpen,
   CheckCircle,
   AlertCircle,
+  ArrowLeft,
 } from "lucide-react";
+
+interface StudentInfo {
+  id: string;
+  name: string | null;
+  email: string;
+}
 
 interface DocumentData {
   id: string;
@@ -79,6 +88,9 @@ interface UploadingFile {
 }
 
 export default function DocumentsPage() {
+  const searchParams = useSearchParams();
+  const studentIdParam = searchParams.get("studentId");
+
   const [documents, setDocuments] = useState<DocumentData[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState("");
@@ -86,13 +98,39 @@ export default function DocumentsPage() {
   const [uploadingFiles, setUploadingFiles] = useState<UploadingFile[]>([]);
   const [selectedDocument, setSelectedDocument] = useState<DocumentData | null>(null);
   const [previewDialogOpen, setPreviewDialogOpen] = useState(false);
+  const [studentInfo, setStudentInfo] = useState<StudentInfo | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // Fetch student info if studentId is provided
+  useEffect(() => {
+    async function fetchStudentInfo() {
+      if (!studentIdParam) {
+        setStudentInfo(null);
+        return;
+      }
+      try {
+        const response = await fetch(`/api/students/${studentIdParam}`);
+        if (response.ok) {
+          const data = await response.json();
+          setStudentInfo({
+            id: data.student.id,
+            name: data.student.user.name,
+            email: data.student.user.email,
+          });
+        }
+      } catch (error) {
+        console.error("Error fetching student info:", error);
+      }
+    }
+    fetchStudentInfo();
+  }, [studentIdParam]);
 
   const fetchDocuments = useCallback(async () => {
     setLoading(true);
     try {
       const params = new URLSearchParams();
       if (searchQuery) params.set("search", searchQuery);
+      if (studentIdParam) params.set("studentId", studentIdParam);
 
       const response = await fetch(`/api/documents?${params.toString()}`);
       if (response.ok) {
@@ -104,7 +142,7 @@ export default function DocumentsPage() {
     } finally {
       setLoading(false);
     }
-  }, [searchQuery]);
+  }, [searchQuery, studentIdParam]);
 
   useEffect(() => {
     const debounce = setTimeout(() => {
@@ -220,14 +258,30 @@ export default function DocumentsPage() {
     }
   };
 
+  const breadcrumbs = studentInfo
+    ? [
+        { label: "Étudiants", href: "/students" },
+        { label: studentInfo.name || studentInfo.email, href: `/students/${studentInfo.id}` },
+        { label: "Documents" },
+      ]
+    : [{ label: "Documents" }];
+
   return (
     <>
       <PageHeader
-        title="Documents"
-        description="Gérez vos documents et dossiers"
-        breadcrumbs={[{ label: "Documents" }]}
+        title={studentInfo ? `Documents de ${studentInfo.name || studentInfo.email}` : "Documents"}
+        description={studentInfo ? "Documents accessibles par cet étudiant" : "Gérez vos documents et dossiers"}
+        breadcrumbs={breadcrumbs}
         actions={
-          <>
+          <div className="flex gap-2">
+            {studentInfo && (
+              <Button variant="outline" asChild>
+                <Link href={`/students/${studentInfo.id}`}>
+                  <ArrowLeft className="mr-2 h-4 w-4" />
+                  Retour à la fiche
+                </Link>
+              </Button>
+            )}
             <input
               ref={fileInputRef}
               type="file"
@@ -240,7 +294,7 @@ export default function DocumentsPage() {
               <Upload className="mr-2 h-4 w-4" />
               Uploader
             </Button>
-          </>
+          </div>
         }
       />
 

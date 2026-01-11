@@ -1,6 +1,8 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
+import Link from "next/link";
+import { useSearchParams } from "next/navigation";
 import { PageHeader } from "@/components/layout";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -38,7 +40,14 @@ import {
   Mic,
   LayoutGrid,
   List,
+  ArrowLeft,
 } from "lucide-react";
+
+interface StudentInfo {
+  id: string;
+  name: string | null;
+  email: string;
+}
 
 interface CalendarEvent {
   id: string;
@@ -78,6 +87,9 @@ interface Professor {
 type ViewMode = "week" | "list";
 
 export default function PlanningPage() {
+  const searchParams = useSearchParams();
+  const studentIdParam = searchParams.get("studentId");
+
   const [events, setEvents] = useState<CalendarEvent[]>([]);
   const [loading, setLoading] = useState(true);
   const [currentDate, setCurrentDate] = useState(new Date());
@@ -86,6 +98,7 @@ export default function PlanningPage() {
   const [students, setStudents] = useState<Student[]>([]);
   const [professors, setProfessors] = useState<Professor[]>([]);
   const [creating, setCreating] = useState(false);
+  const [studentInfo, setStudentInfo] = useState<StudentInfo | null>(null);
 
   const [newEvent, setNewEvent] = useState({
     title: "",
@@ -93,10 +106,36 @@ export default function PlanningPage() {
     startTime: "",
     endTime: "",
     eventType: "COURS_QUANT",
-    studentId: "",
+    studentId: studentIdParam || "",
     instructorId: "",
     meetingUrl: "",
   });
+
+  // Fetch student info if studentId is provided
+  useEffect(() => {
+    async function fetchStudentInfo() {
+      if (!studentIdParam) {
+        setStudentInfo(null);
+        return;
+      }
+      try {
+        const response = await fetch(`/api/students/${studentIdParam}`);
+        if (response.ok) {
+          const data = await response.json();
+          setStudentInfo({
+            id: data.student.id,
+            name: data.student.user.name,
+            email: data.student.user.email,
+          });
+          // Pre-fill studentId in new event form
+          setNewEvent(prev => ({ ...prev, studentId: studentIdParam }));
+        }
+      } catch (error) {
+        console.error("Error fetching student info:", error);
+      }
+    }
+    fetchStudentInfo();
+  }, [studentIdParam]);
 
   // Get week dates
   const getWeekDates = (date: Date) => {
@@ -129,6 +168,9 @@ export default function PlanningPage() {
       const params = new URLSearchParams();
       params.set("startDate", startDate.toISOString());
       params.set("endDate", endDate.toISOString());
+      if (studentIdParam) {
+        params.set("studentId", studentIdParam);
+      }
 
       const response = await fetch(`/api/calendar-events?${params.toString()}`);
       if (response.ok) {
@@ -140,7 +182,7 @@ export default function PlanningPage() {
     } finally {
       setLoading(false);
     }
-  }, [weekStartKey, weekEndKey]);
+  }, [weekStartKey, weekEndKey, studentIdParam]);
 
   useEffect(() => {
     fetchEvents();
@@ -278,17 +320,35 @@ export default function PlanningPage() {
 
   const hours = Array.from({ length: 12 }, (_, i) => i + 8); // 8AM to 7PM
 
+  const breadcrumbs = studentInfo
+    ? [
+        { label: "Étudiants", href: "/students" },
+        { label: studentInfo.name || studentInfo.email, href: `/students/${studentInfo.id}` },
+        { label: "Planning" },
+      ]
+    : [{ label: "Planning" }];
+
   return (
     <>
       <PageHeader
-        title="Planning"
-        description="Gérez les cours et sessions"
-        breadcrumbs={[{ label: "Planning" }]}
+        title={studentInfo ? `Planning de ${studentInfo.name || studentInfo.email}` : "Planning"}
+        description={studentInfo ? "Cours et sessions de cet étudiant" : "Gérez les cours et sessions"}
+        breadcrumbs={breadcrumbs}
         actions={
-          <Button onClick={() => setNewEventDialogOpen(true)}>
-            <Plus className="mr-2 h-4 w-4" />
-            Nouvel événement
-          </Button>
+          <div className="flex gap-2">
+            {studentInfo && (
+              <Button variant="outline" asChild>
+                <Link href={`/students/${studentInfo.id}`}>
+                  <ArrowLeft className="mr-2 h-4 w-4" />
+                  Retour à la fiche
+                </Link>
+              </Button>
+            )}
+            <Button onClick={() => setNewEventDialogOpen(true)}>
+              <Plus className="mr-2 h-4 w-4" />
+              Nouvel événement
+            </Button>
+          </div>
         }
       />
 

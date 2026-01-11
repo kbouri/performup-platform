@@ -5,6 +5,8 @@ import path from "path";
 
 // Check if Vercel Blob is configured
 const useVercelBlob = !!process.env.BLOB_READ_WRITE_TOKEN;
+// Check if running on Vercel (serverless environment with read-only filesystem)
+const isVercelEnvironment = !!process.env.VERCEL;
 
 /**
  * Upload a file to Vercel Blob Storage or local filesystem
@@ -22,6 +24,13 @@ export async function uploadFile(
 }> {
   const filePath = options?.folder ? `${options.folder}/${filename}` : filename;
 
+  // On Vercel, we MUST use Vercel Blob - filesystem is read-only
+  if (isVercelEnvironment && !useVercelBlob) {
+    throw new Error(
+      "BLOB_READ_WRITE_TOKEN n'est pas configuré. Veuillez connecter un Blob Store dans les paramètres Vercel."
+    );
+  }
+
   if (useVercelBlob) {
     // Use Vercel Blob in production
     const blob = await put(filePath, file, {
@@ -35,7 +44,7 @@ export async function uploadFile(
       contentType: file.type || "application/octet-stream",
     };
   } else {
-    // Use local filesystem in development
+    // Use local filesystem in development only
     const uploadDir = path.join(process.cwd(), "public", "uploads");
     const folderPath = options?.folder
       ? path.join(uploadDir, options.folder)

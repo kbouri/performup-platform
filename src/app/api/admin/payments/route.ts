@@ -32,8 +32,22 @@ export async function GET(req: NextRequest) {
         // Build where clause
         const where: Record<string, unknown> = {};
 
+        // Filter by type using the appropriate ID field
+        // Payment type is derived from which ID is set (studentId, mentorId, professorId)
         if (validatedParams.type) {
-            where.type = validatedParams.type;
+            if (validatedParams.type === "STUDENT") {
+                where.studentId = { not: null };
+                where.mentorId = null;
+                where.professorId = null;
+            } else if (validatedParams.type === "MENTOR") {
+                where.mentorId = { not: null };
+                where.studentId = null;
+                where.professorId = null;
+            } else if (validatedParams.type === "PROFESSOR") {
+                where.professorId = { not: null };
+                where.studentId = null;
+                where.mentorId = null;
+            }
         }
 
         if (validatedParams.studentId) {
@@ -99,19 +113,21 @@ export async function GET(req: NextRequest) {
                         },
                     },
                 },
-                mission: {
+                schedule: {
                     select: {
                         id: true,
-                        description: true,
+                        type: true,
                         amount: true,
                         currency: true,
                         status: true,
+                        dueDate: true,
                     },
                 },
                 bankAccount: {
                     select: {
                         id: true,
-                        name: true,
+                        accountName: true,
+                        bankName: true,
                         currency: true,
                     },
                 },

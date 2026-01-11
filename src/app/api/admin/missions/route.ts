@@ -14,7 +14,7 @@ import { ZodError } from "zod";
 export async function POST(req: NextRequest) {
     try {
         // Check admin authentication
-        await requireAdmin(req);
+        const adminUser = await requireAdmin(req);
 
         // Parse and validate request body
         const body = await req.json();
@@ -72,7 +72,7 @@ export async function POST(req: NextRequest) {
                 status: "PENDING",
                 date: new Date(validatedData.startDate),
                 notes: validatedData.notes,
-                createdBy: "system", // TODO: Get from auth session
+                createdBy: adminUser.id,
             },
             include: {
                 mentor: {

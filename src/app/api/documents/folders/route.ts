@@ -24,13 +24,44 @@ export async function POST(request: NextRequest) {
             );
         }
 
+        // Determine the actual parent folder
+        let actualParentId = parentId;
+
+        // If studentId is provided and no parentId, use or create student's root folder as parent
+        if (studentId && !parentId) {
+            const student = await prisma.student.findUnique({
+                where: { id: studentId },
+                include: { user: { select: { name: true } } }
+            });
+
+            if (student) {
+                if (student.rootFolderId) {
+                    actualParentId = student.rootFolderId;
+                } else {
+                    // Create root folder for student first
+                    const studentName = student.user.name || `Étudiant ${studentId.slice(0, 8)}`;
+                    const rootFolder = await prisma.folder.create({
+                        data: {
+                            name: `Documents - ${studentName}`,
+                            path: `/students/${studentId}`,
+                        }
+                    });
+                    await prisma.student.update({
+                        where: { id: studentId },
+                        data: { rootFolderId: rootFolder.id }
+                    });
+                    actualParentId = rootFolder.id;
+                }
+            }
+        }
+
         // Determine path
         let path = name;
         let parentFolder = null;
 
-        if (parentId) {
+        if (actualParentId) {
             parentFolder = await prisma.folder.findUnique({
-                where: { id: parentId },
+                where: { id: actualParentId },
             });
 
             if (!parentFolder) {
@@ -43,20 +74,10 @@ export async function POST(request: NextRequest) {
             path = `${parentFolder.path}/${name}`;
         }
 
-        // Helper to check if folder with same path exists (unique constraint)
-        const existingFolder = await prisma.folder.findUnique({
-            where: {
-                parentId_path: {
-                    parentId: parentId || "",
-                    path: path
-                } as any // Cast to avoid TS issues if types are strict about null in where unique
-            }
-        });
-
-        // Better check:
+        // Check if folder with same path exists
         const check = await prisma.folder.findFirst({
             where: {
-                parentId: parentId,
+                parentId: actualParentId,
                 path: path
             }
         });
@@ -68,44 +89,28 @@ export async function POST(request: NextRequest) {
             );
         }
 
-        // Permission check
-        // If studentId is provided (e.g. creating root folder for student), check admin
-        if (studentId) {
-            if (!isAdmin(session.user)) {
-                return NextResponse.json({ error: "Non autorisé" }, { status: 403 });
-            }
-        } else if (parentId) {
-            // Check write permission on parent folder
-            const canEdit = isAdmin(session.user) || await prisma.folderPermission.findFirst({
+        // Permission check - admins can always create, others need permission on parent
+        if (!isAdmin(session.user) && actualParentId) {
+            const hasPermission = await prisma.folderPermission.findFirst({
                 where: {
-                    folderId: parentId,
+                    folderId: actualParentId,
                     userId: session.user.id,
                     canEdit: true
                 }
             });
 
-            // Also allow if user is owner of parent folder documents? No, folders don't have owners directly field.
-            // But folders are usually created by system or admins. 
-            // Let's assume for now admins or those with permission.
-            // For simple "My Documents", if folder permissions are not set, maybe allow?
-            // Let's stick to strict permissions: Admin or explicit permission.
+            if (!hasPermission) {
+                return NextResponse.json({ error: "Non autorisé" }, { status: 403 });
+            }
         }
 
         const folder = await prisma.folder.create({
             data: {
                 name,
                 path,
-                parentId,
+                parentId: actualParentId,
             },
         });
-
-        // If studentId provided, link it
-        if (studentId) {
-            await prisma.student.update({
-                where: { id: studentId },
-                data: { rootFolderId: folder.id }
-            });
-        }
 
         // Grant creator full permissions (if not admin, though admins have implied)
         if (!isAdmin(session.user)) {

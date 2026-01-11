@@ -33,14 +33,36 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // If studentId provided but no folderId, use student's root folder
+    // If studentId provided but no folderId, use or create student's root folder
     if (!targetFolderId && studentId) {
       const student = await prisma.student.findUnique({
         where: { id: studentId },
-        select: { rootFolderId: true }
+        include: {
+          user: { select: { name: true } },
+        }
       });
-      if (student?.rootFolderId) {
-        targetFolderId = student.rootFolderId;
+
+      if (student) {
+        if (student.rootFolderId) {
+          targetFolderId = student.rootFolderId;
+        } else {
+          // Create a root folder for this student
+          const studentName = student.user.name || `Étudiant ${studentId.slice(0, 8)}`;
+          const rootFolder = await prisma.folder.create({
+            data: {
+              name: `Documents - ${studentName}`,
+              path: `/students/${studentId}`,
+            }
+          });
+
+          // Link the folder to the student
+          await prisma.student.update({
+            where: { id: studentId },
+            data: { rootFolderId: rootFolder.id }
+          });
+
+          targetFolderId = rootFolder.id;
+        }
       }
     }
 

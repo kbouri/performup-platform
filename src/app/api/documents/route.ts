@@ -3,6 +3,25 @@ import { auth, canAccessStudent, isAdmin } from "@/lib/auth";
 import { prisma } from "@/lib/db/prisma";
 import { headers } from "next/headers";
 
+// Helper to get all folder IDs under a root folder (recursive)
+async function getFolderIdsUnderRoot(rootFolderId: string): Promise<string[]> {
+  const allIds: string[] = [rootFolderId];
+
+  async function collectChildren(parentId: string) {
+    const children = await prisma.folder.findMany({
+      where: { parentId },
+      select: { id: true },
+    });
+    for (const child of children) {
+      allIds.push(child.id);
+      await collectChildren(child.id);
+    }
+  }
+
+  await collectChildren(rootFolderId);
+  return allIds;
+}
+
 // GET /api/documents - List documents with filters
 export async function GET(request: NextRequest) {
   try {
@@ -24,58 +43,76 @@ export async function GET(request: NextRequest) {
 
     // Build where clause
     const where: Record<string, unknown> = {};
+    const folderWhere: Record<string, unknown> = {};
 
     // Search filter
     if (search) {
       where.name = { contains: search, mode: "insensitive" };
     }
 
-    // Folder filter
-    if (folderId) {
-      where.folderId = folderId;
-    }
-
     // Access control
     const userId = session.user.id;
 
-    // Admin sees everything
-    if (!isAdmin(session.user)) {
-      // Non-admin users see their own documents or documents they have permission for
-      where.OR = [
-        { ownerId: userId },
-        {
-          permissions: {
-            some: {
-              userId: userId,
-              canView: true,
-            },
-          },
-        },
-      ];
-    }
+    // Determine the student context
+    let studentRootFolderId: string | null = null;
 
-    // If filtering by studentId, check access
     if (studentId && canAccessStudent(session.user)) {
-      // Get student's root folder and filter documents in that folder
+      // Viewing a specific student's documents
       const student = await prisma.student.findUnique({
         where: { id: studentId },
         select: { rootFolderId: true },
       });
+      studentRootFolderId = student?.rootFolderId || null;
+    } else if (!studentId) {
+      // No studentId = viewing user's own documents (not student-specific)
+      // For admins/mentors viewing their own space, show only documents they own
+      // that are NOT in any student's root folder
+    }
 
-      if (student?.rootFolderId && !folderId) {
-        where.folderId = student.rootFolderId;
+    // If we have a specific folder requested, use it
+    if (folderId) {
+      where.folderId = folderId;
+      folderWhere.parentId = folderId;
+    } else if (studentRootFolderId) {
+      // No folder specified but we have a student context - use student's root folder
+      where.folderId = studentRootFolderId;
+      folderWhere.parentId = studentRootFolderId;
+    } else {
+      // No folder and no student context - show root level documents owned by user
+      // Exclude documents that belong to any student's folder structure
+      where.folderId = null;
+      where.ownerId = userId;
+      folderWhere.parentId = null;
+
+      // For non-admin, only show folders they created or have access to
+      if (!isAdmin(session.user)) {
+        // Get all student root folder IDs to exclude them
+        const studentRootFolders = await prisma.student.findMany({
+          where: { rootFolderId: { not: null } },
+          select: { rootFolderId: true },
+        });
+        const studentRootIds = studentRootFolders
+          .map(s => s.rootFolderId)
+          .filter((id): id is string => id !== null);
+
+        if (studentRootIds.length > 0) {
+          folderWhere.id = { notIn: studentRootIds };
+        }
       }
+    }
+
+    // Additional access control for documents
+    if (!isAdmin(session.user) && !studentId) {
+      // Non-admin viewing their own space - only their documents
+      where.ownerId = userId;
     }
 
     // Get total count
     const total = await prisma.document.count({ where });
 
-    // Get folders (subfolders of current folderId)
+    // Get folders
     const folders = await prisma.folder.findMany({
-      where: {
-        parentId: folderId || null,
-        // Add permission check if needed
-      },
+      where: folderWhere,
       orderBy: { name: "asc" },
       include: {
         _count: {

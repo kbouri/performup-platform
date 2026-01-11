@@ -62,13 +62,27 @@ export async function GET(request: NextRequest) {
         select: { rootFolderId: true },
       });
 
-      if (student?.rootFolderId) {
+      if (student?.rootFolderId && !folderId) {
         where.folderId = student.rootFolderId;
       }
     }
 
     // Get total count
     const total = await prisma.document.count({ where });
+
+    // Get folders (subfolders of current folderId)
+    const folders = await prisma.folder.findMany({
+      where: {
+        parentId: folderId || null,
+        // Add permission check if needed
+      },
+      orderBy: { name: "asc" },
+      include: {
+        _count: {
+          select: { documents: true },
+        },
+      },
+    });
 
     // Get documents
     const documents = await prisma.document.findMany({
@@ -127,6 +141,7 @@ export async function GET(request: NextRequest) {
     }));
 
     return NextResponse.json({
+      folders,
       documents: formattedDocuments,
       pagination: {
         page,

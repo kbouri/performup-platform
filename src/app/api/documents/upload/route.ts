@@ -22,13 +22,26 @@ export async function POST(request: NextRequest) {
     const formData = await request.formData();
     const file = formData.get("file") as File | null;
     const folderId = formData.get("folderId") as string | null;
+    const studentId = formData.get("studentId") as string | null;
     const description = formData.get("description") as string | null;
+    let targetFolderId = folderId;
 
     if (!file) {
       return NextResponse.json(
         { error: "Aucun fichier fourni" },
         { status: 400 }
       );
+    }
+
+    // If studentId provided but no folderId, use student's root folder
+    if (!targetFolderId && studentId) {
+      const student = await prisma.student.findUnique({
+        where: { id: studentId },
+        select: { rootFolderId: true }
+      });
+      if (student?.rootFolderId) {
+        targetFolderId = student.rootFolderId;
+      }
     }
 
     // Validate file
@@ -38,9 +51,9 @@ export async function POST(request: NextRequest) {
     }
 
     // Check folder permissions if folderId is provided
-    if (folderId) {
+    if (targetFolderId) {
       const folder = await prisma.folder.findUnique({
-        where: { id: folderId },
+        where: { id: targetFolderId },
         include: {
           permissions: {
             where: { userId: session.user.id },
@@ -73,7 +86,7 @@ export async function POST(request: NextRequest) {
 
     // Upload to Vercel Blob
     const uploadResult = await uploadFile(file, filename, {
-      folder: folderId ? `documents/${folderId}` : "documents",
+      folder: targetFolderId ? `documents/${targetFolderId}` : "documents",
     });
 
     // Create document record
@@ -84,7 +97,7 @@ export async function POST(request: NextRequest) {
         fileUrl: uploadResult.url,
         fileSize: BigInt(uploadResult.size),
         contentType: uploadResult.contentType,
-        folderId: folderId || null,
+        folderId: targetFolderId || null,
         ownerId: session.user.id,
         version: 1,
       },

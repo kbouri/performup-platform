@@ -101,8 +101,9 @@ export async function GET() {
 
     // Calculer les totaux
     const totalAmount = quote?.totalAmount || 0;
-    const totalPaid = schedules.reduce((sum, s) => sum + s.paidAmount, 0);
-    const remaining = totalAmount - totalPaid;
+    // Calculate totalPaid from actual validated payments, not schedules
+    const totalPaid = payments.reduce((sum, p) => sum + p.amount, 0);
+    const remaining = Math.max(0, totalAmount - totalPaid);
 
     return NextResponse.json({
       student: {
@@ -122,20 +123,20 @@ export async function GET() {
       })),
       quote: quote
         ? {
-            id: quote.id,
-            quoteNumber: quote.quoteNumber,
-            totalAmount: quote.totalAmount,
-            currency: quote.currency,
-            paymentCurrency: quote.paymentCurrency,
-            status: quote.status,
-            validatedAt: quote.validatedAt,
-            items: quote.items.map((item) => ({
-              id: item.id,
-              amount: item.amount,
-              description: item.description,
-              packName: item.studentPack.pack.displayName,
-            })),
-          }
+          id: quote.id,
+          quoteNumber: quote.quoteNumber,
+          totalAmount: quote.totalAmount,
+          currency: quote.currency,
+          paymentCurrency: quote.paymentCurrency,
+          status: quote.status,
+          validatedAt: quote.validatedAt,
+          items: quote.items.map((item) => ({
+            id: item.id,
+            amount: item.amount,
+            description: item.description,
+            packName: item.studentPack.pack.displayName,
+          })),
+        }
         : null,
       schedules: schedules.map((s) => ({
         id: s.id,

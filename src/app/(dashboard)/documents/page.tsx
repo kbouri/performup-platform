@@ -9,12 +9,14 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
+import { Label } from "@/components/ui/label";
 import {
   Dialog,
   DialogContent,
   DialogDescription,
   DialogHeader,
   DialogTitle,
+  DialogFooter
 } from "@/components/ui/dialog";
 import {
   DropdownMenu,
@@ -39,9 +41,13 @@ import {
   Share2,
   Loader2,
   FolderOpen,
+  FolderPlus,
+  ArrowLeft,
+  ChevronRight,
+  Folder,
   CheckCircle,
   AlertCircle,
-  ArrowLeft,
+  Pencil
 } from "lucide-react";
 
 interface StudentInfo {
@@ -79,6 +85,16 @@ interface DocumentData {
   updatedAt: string;
 }
 
+interface FolderData {
+  id: string;
+  name: string;
+  path: string;
+  parentId: string | null;
+  _count: {
+    documents: number;
+  };
+}
+
 interface UploadingFile {
   id: string;
   file: File;
@@ -91,17 +107,24 @@ export default function DocumentsPage() {
   const searchParams = useSearchParams();
   const studentIdParam = searchParams.get("studentId");
 
+  const [currentFolderId, setCurrentFolderId] = useState<string | null>(null);
+  const [folderStack, setFolderStack] = useState<FolderData[]>([]);
+
   const [documents, setDocuments] = useState<DocumentData[]>([]);
+  const [folders, setFolders] = useState<FolderData[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState("");
   const [uploadDialogOpen, setUploadDialogOpen] = useState(false);
   const [uploadingFiles, setUploadingFiles] = useState<UploadingFile[]>([]);
   const [selectedDocument, setSelectedDocument] = useState<DocumentData | null>(null);
   const [previewDialogOpen, setPreviewDialogOpen] = useState(false);
+  const [createFolderOpen, setCreateFolderOpen] = useState(false);
+  const [newFolderName, setNewFolderName] = useState("");
+  const [creatingFolder, setCreatingFolder] = useState(false);
   const [studentInfo, setStudentInfo] = useState<StudentInfo | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  // Fetch student info if studentId is provided
+  // Fetch student info
   useEffect(() => {
     async function fetchStudentInfo() {
       if (!studentIdParam) {
@@ -131,18 +154,20 @@ export default function DocumentsPage() {
       const params = new URLSearchParams();
       if (searchQuery) params.set("search", searchQuery);
       if (studentIdParam) params.set("studentId", studentIdParam);
+      if (currentFolderId) params.set("folderId", currentFolderId);
 
       const response = await fetch(`/api/documents?${params.toString()}`);
       if (response.ok) {
         const data = await response.json();
         setDocuments(data.documents);
+        setFolders(data.folders);
       }
     } catch (error) {
       console.error("Error fetching documents:", error);
     } finally {
       setLoading(false);
     }
-  }, [searchQuery, studentIdParam]);
+  }, [searchQuery, studentIdParam, currentFolderId]);
 
   useEffect(() => {
     const debounce = setTimeout(() => {
@@ -150,6 +175,58 @@ export default function DocumentsPage() {
     }, 300);
     return () => clearTimeout(debounce);
   }, [fetchDocuments]);
+
+  const handleCreateFolder = async () => {
+    if (!newFolderName.trim()) return;
+    setCreatingFolder(true);
+    try {
+      const res = await fetch("/api/documents/folders", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name: newFolderName,
+          parentId: currentFolderId,
+          studentId: studentIdParam // Optional: create root for student if needed
+        }),
+      });
+
+      if (res.ok) {
+        setCreateFolderOpen(false);
+        setNewFolderName("");
+        fetchDocuments();
+      } else {
+        alert("Erreur lors de la création du dossier");
+      }
+    } catch (e) {
+      console.error(e);
+    } finally {
+      setCreatingFolder(false);
+    }
+  };
+
+  const navigateToFolder = (folder: FolderData) => {
+    setFolderStack([...folderStack, folder]);
+    setCurrentFolderId(folder.id);
+  };
+
+  const navigateUp = () => {
+    if (folderStack.length === 0) return;
+    const newStack = [...folderStack];
+    newStack.pop();
+    setFolderStack(newStack);
+    setCurrentFolderId(newStack.length > 0 ? newStack[newStack.length - 1].id : null);
+  };
+
+  const navigateToBreadcrumb = (index: number) => {
+    if (index === -1) {
+      setFolderStack([]);
+      setCurrentFolderId(null);
+    } else {
+      const newStack = folderStack.slice(0, index + 1);
+      setFolderStack(newStack);
+      setCurrentFolderId(newStack[newStack.length - 1].id);
+    }
+  };
 
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files;
@@ -174,6 +251,13 @@ export default function DocumentsPage() {
   const uploadDocument = async (uploadFile: UploadingFile) => {
     const formData = new FormData();
     formData.append("file", uploadFile.file);
+    if (currentFolderId) {
+      formData.append("folderId", currentFolderId);
+    }
+    if (studentIdParam) {
+      formData.append("studentId", studentIdParam);
+    }
+    // TODO: Add support for passing description if needed
 
     try {
       const response = await fetch("/api/documents/upload", {
@@ -208,6 +292,59 @@ export default function DocumentsPage() {
             : f
         )
       );
+    }
+  };
+
+  const [renameDialogOpen, setRenameDialogOpen] = useState(false);
+  const [moveDialogOpen, setMoveDialogOpen] = useState(false);
+  const [newName, setNewName] = useState("");
+  const [managingFile, setManagingFile] = useState(false);
+  const [selectedFolder, setSelectedFolder] = useState<FolderData | null>(null);
+
+  // Handlers
+  const handleRename = async () => {
+    if (!newName.trim()) return;
+    setManagingFile(true);
+    try {
+      // Check if renaming document or folder
+      const isFolder = !!selectedFolder;
+      const id = isFolder ? selectedFolder?.id : selectedDocument?.id;
+      const url = isFolder ? `/api/documents/folders/${id}` : `/api/documents/${id}`;
+
+      const res = await fetch(url, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name: newName })
+      });
+
+      if (res.ok) {
+        setRenameDialogOpen(false);
+        fetchDocuments();
+      } else {
+        alert("Erreur lors du renommage");
+      }
+    } catch (e) {
+      console.error(e);
+    } finally {
+      setManagingFile(false);
+    }
+  };
+
+  const handleDeleteFolder = async (folderId: string) => {
+    if (!confirm("Êtes-vous sûr ? Le dossier doit être vide.")) return;
+    try {
+      const res = await fetch(`/api/documents/folders/${folderId}`, {
+        method: "DELETE",
+      });
+
+      if (res.ok) {
+        fetchDocuments();
+      } else {
+        const data = await res.json();
+        alert(data.error || "Erreur lors de la suppression");
+      }
+    } catch (e) {
+      console.error(e);
     }
   };
 
@@ -258,12 +395,12 @@ export default function DocumentsPage() {
     }
   };
 
-  const breadcrumbs = studentInfo
+  const navBreadcrumbs = studentInfo
     ? [
-        { label: "Étudiants", href: "/students" },
-        { label: studentInfo.name || studentInfo.email, href: `/students/${studentInfo.id}` },
-        { label: "Documents" },
-      ]
+      { label: "Étudiants", href: "/students" },
+      { label: studentInfo.name || studentInfo.email, href: `/students/${studentInfo.id}` },
+      { label: "Documents" },
+    ]
     : [{ label: "Documents" }];
 
   return (
@@ -271,7 +408,7 @@ export default function DocumentsPage() {
       <PageHeader
         title={studentInfo ? `Documents de ${studentInfo.name || studentInfo.email}` : "Documents"}
         description={studentInfo ? "Documents accessibles par cet étudiant" : "Gérez vos documents et dossiers"}
-        breadcrumbs={breadcrumbs}
+        breadcrumbs={navBreadcrumbs}
         actions={
           <div className="flex gap-2">
             {studentInfo && (
@@ -282,6 +419,10 @@ export default function DocumentsPage() {
                 </Link>
               </Button>
             )}
+            <Button variant="outline" onClick={() => setCreateFolderOpen(true)}>
+              <FolderPlus className="mr-2 h-4 w-4" />
+              Nouveau dossier
+            </Button>
             <input
               ref={fileInputRef}
               type="file"
@@ -298,6 +439,27 @@ export default function DocumentsPage() {
         }
       />
 
+      {/* Folder Navigation Breadcrumbs */}
+      <div className="flex items-center gap-2 mb-6 text-sm text-muted-foreground overflow-x-auto pb-2">
+        <button
+          onClick={() => navigateToBreadcrumb(-1)}
+          className={`hover:text-foreground transition-colors ${!currentFolderId ? 'font-semibold text-foreground' : ''}`}
+        >
+          Racine
+        </button>
+        {folderStack.map((folder, index) => (
+          <div key={folder.id} className="flex items-center gap-2">
+            <ChevronRight className="h-4 w-4" />
+            <button
+              onClick={() => navigateToBreadcrumb(index)}
+              className={`hover:text-foreground transition-colors whitespace-nowrap ${index === folderStack.length - 1 ? 'font-semibold text-foreground' : ''}`}
+            >
+              {folder.name}
+            </button>
+          </div>
+        ))}
+      </div>
+
       {/* Search */}
       <div className="flex items-center gap-4 mb-6">
         <div className="relative flex-1 max-w-md">
@@ -312,63 +474,120 @@ export default function DocumentsPage() {
       </div>
 
       {/* Stats */}
-      <div className="grid gap-4 md:grid-cols-4 mb-6">
-        <Card>
-          <CardContent className="pt-6">
-            <div className="text-2xl font-bold font-display text-performup-blue">
-              {documents.length}
-            </div>
-            <p className="text-sm text-muted-foreground">Total documents</p>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="pt-6">
-            <div className="text-2xl font-bold font-display">
-              {formatFileSize(
-                documents.reduce((acc, doc) => acc + doc.fileSize, 0)
-              )}
-            </div>
-            <p className="text-sm text-muted-foreground">Espace utilisé</p>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="pt-6">
-            <div className="text-2xl font-bold font-display text-success">
-              {documents.filter((d) => d.contentType.includes("pdf")).length}
-            </div>
-            <p className="text-sm text-muted-foreground">PDFs</p>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="pt-6">
-            <div className="text-2xl font-bold font-display text-performup-gold">
-              {documents.filter((d) => d.contentType.startsWith("image/")).length}
-            </div>
-            <p className="text-sm text-muted-foreground">Images</p>
-          </CardContent>
-        </Card>
-      </div>
+      {!currentFolderId && !searchQuery && (
+        <div className="grid gap-4 md:grid-cols-4 mb-6">
+          <Card>
+            <CardContent className="pt-6">
+              <div className="text-2xl font-bold font-display text-performup-blue">
+                {documents.length}
+              </div>
+              <p className="text-sm text-muted-foreground">Total documents</p>
+            </CardContent>
+          </Card>
+          <Card>
+            <CardContent className="pt-6">
+              <div className="text-2xl font-bold font-display">
+                {formatFileSize(
+                  documents.reduce((acc, doc) => acc + doc.fileSize, 0)
+                )}
+              </div>
+              <p className="text-sm text-muted-foreground">Espace utilisé</p>
+            </CardContent>
+          </Card>
+          <Card>
+            <CardContent className="pt-6">
+              <div className="text-2xl font-bold font-display text-success">
+                {documents.filter((d) => d.contentType.includes("pdf")).length}
+              </div>
+              <p className="text-sm text-muted-foreground">PDFs</p>
+            </CardContent>
+          </Card>
+          <Card>
+            <CardContent className="pt-6">
+              <div className="text-2xl font-bold font-display text-performup-gold">
+                {documents.filter((d) => d.contentType.startsWith("image/")).length}
+              </div>
+              <p className="text-sm text-muted-foreground">Images</p>
+            </CardContent>
+          </Card>
+        </div>
+      )}
 
       {/* Documents list */}
       {loading ? (
         <div className="flex items-center justify-center py-12">
           <Loader2 className="h-8 w-8 animate-spin text-performup-blue" />
         </div>
-      ) : documents.length === 0 ? (
+      ) : documents.length === 0 && folders.length === 0 ? (
         <Card>
           <CardContent className="py-12 text-center">
             <FolderOpen className="h-12 w-12 mx-auto text-muted-foreground mb-4" />
-            <p className="text-muted-foreground mb-4">Aucun document</p>
-            <Button onClick={() => fileInputRef.current?.click()}>
-              <Upload className="mr-2 h-4 w-4" />
-              Uploader un document
-            </Button>
+            <p className="text-muted-foreground mb-4">
+              {searchQuery ? "Aucun résultat" : "Dossier vide"}
+            </p>
+            {!searchQuery && (
+              <div className="flex justify-center gap-2">
+                <Button variant="outline" onClick={() => setCreateFolderOpen(true)}>
+                  <FolderPlus className="mr-2 h-4 w-4" />
+                  Nouveau dossier
+                </Button>
+                <Button onClick={() => fileInputRef.current?.click()}>
+                  <Upload className="mr-2 h-4 w-4" />
+                  Uploader un document
+                </Button>
+              </div>
+            )}
           </CardContent>
         </Card>
       ) : (
         <Card>
           <CardContent className="p-0">
             <div className="divide-y">
+              {/* Folders */}
+              {folders.map(folder => (
+                <div
+                  key={folder.id}
+                  className="flex items-center gap-4 p-4 hover:bg-muted/50 transition-colors cursor-pointer group"
+                  onClick={() => navigateToFolder(folder)}
+                >
+                  <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-blue-50 text-blue-600">
+                    <Folder className="h-5 w-5 fill-current" />
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className="font-medium truncate">{folder.name}</p>
+                    <p className="text-sm text-muted-foreground">
+                      {folder._count.documents} fichiers
+                    </p>
+                  </div>
+                  <div className="flex items-center gap-2" onClick={e => e.stopPropagation()}>
+                    <DropdownMenu>
+                      <DropdownMenuTrigger asChild>
+                        <Button variant="ghost" size="icon-sm" className="opacity-0 group-hover:opacity-100">
+                          <MoreHorizontal className="h-4 w-4" />
+                        </Button>
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent align="end">
+                        <DropdownMenuItem onClick={() => {
+                          setSelectedFolder(folder);
+                          setSelectedDocument(null);
+                          setNewName(folder.name);
+                          setRenameDialogOpen(true);
+                        }}>
+                          <Pencil className="mr-2 h-4 w-4" />
+                          Renommer
+                        </DropdownMenuItem>
+                        <DropdownMenuItem className="text-error" onClick={() => handleDeleteFolder(folder.id)}>
+                          <Trash2 className="mr-2 h-4 w-4" />
+                          Supprimer
+                        </DropdownMenuItem>
+                      </DropdownMenuContent>
+                    </DropdownMenu>
+                    <ChevronRight className="h-4 w-4 text-muted-foreground" />
+                  </div>
+                </div>
+              ))}
+
+              {/* Files */}
               {documents.map((doc) => {
                 const FileIcon = getFileIcon(doc.contentType);
                 return (
@@ -386,7 +605,7 @@ export default function DocumentsPage() {
                             setSelectedDocument(doc);
                             setPreviewDialogOpen(true);
                           }}
-                          className="font-medium truncate hover:text-performup-blue transition-colors"
+                          className="font-medium truncate hover:text-performup-blue transition-colors text-left"
                         >
                           {doc.name}
                         </button>
@@ -435,6 +654,17 @@ export default function DocumentsPage() {
                         </DropdownMenuItem>
                         <DropdownMenuSeparator />
                         {doc.permissions.canEdit && (
+                          <DropdownMenuItem onClick={() => {
+                            setSelectedDocument(doc);
+                            setSelectedFolder(null); // Ensure folder is null
+                            setNewName(doc.name);
+                            setRenameDialogOpen(true);
+                          }}>
+                            <Pencil className="mr-2 h-4 w-4" />
+                            Renommer
+                          </DropdownMenuItem>
+                        )}
+                        {doc.permissions.canEdit && (
                           <DropdownMenuItem
                             className="text-error"
                             onClick={() => handleDeleteDocument(doc.id)}
@@ -452,6 +682,23 @@ export default function DocumentsPage() {
           </CardContent>
         </Card>
       )}
+
+      {/* Rename Dialog */}
+      <Dialog open={renameDialogOpen} onOpenChange={setRenameDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Renommer {selectedFolder ? "le dossier" : "le document"}</DialogTitle>
+          </DialogHeader>
+          <div className="py-4">
+            <Label>Nouveau nom</Label>
+            <Input value={newName} onChange={e => setNewName(e.target.value)} className="mt-2" />
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setRenameDialogOpen(false)}>Annuler</Button>
+            <Button onClick={handleRename} disabled={managingFile}>Enregistrer</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {/* Upload Dialog */}
       <Dialog open={uploadDialogOpen} onOpenChange={setUploadDialogOpen}>
@@ -502,6 +749,35 @@ export default function DocumentsPage() {
               </Button>
             </div>
           )}
+        </DialogContent>
+      </Dialog>
+
+      {/* Create Folder Dialog */}
+      <Dialog open={createFolderOpen} onOpenChange={setCreateFolderOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Nouveau dossier</DialogTitle>
+            <DialogDescription>
+              Créez un nouveau dossier pour organiser vos documents.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="py-4">
+            <Label htmlFor="folderName">Nom du dossier</Label>
+            <Input
+              id="folderName"
+              value={newFolderName}
+              onChange={(e) => setNewFolderName(e.target.value)}
+              placeholder="Ex: Factures"
+              className="mt-2"
+            />
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setCreateFolderOpen(false)}>Annuler</Button>
+            <Button onClick={handleCreateFolder} disabled={creatingFolder || !newFolderName}>
+              {creatingFolder && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+              Créer
+            </Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
 

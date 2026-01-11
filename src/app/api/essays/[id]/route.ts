@@ -40,7 +40,22 @@ export async function GET(
         },
         school: true,
         program: true,
-        responses: true,
+        responses: {
+          include: {
+            question: {
+              select: {
+                questionText: true,
+                wordLimit: true,
+                characterLimit: true,
+              },
+            },
+          },
+          orderBy: {
+            question: {
+              order: "asc",
+            },
+          },
+        },
       },
     });
 

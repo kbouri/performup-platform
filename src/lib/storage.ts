@@ -1,7 +1,13 @@
 import { put, del, list } from "@vercel/blob";
+import { writeFile, unlink, mkdir } from "fs/promises";
+import { existsSync } from "fs";
+import path from "path";
+
+// Check if Vercel Blob is configured
+const useVercelBlob = !!process.env.BLOB_READ_WRITE_TOKEN;
 
 /**
- * Upload a file to Vercel Blob Storage
+ * Upload a file to Vercel Blob Storage or local filesystem
  */
 export async function uploadFile(
   file: File | Blob,
@@ -14,25 +20,72 @@ export async function uploadFile(
   size: number;
   contentType: string;
 }> {
-  const path = options?.folder ? `${options.folder}/${filename}` : filename;
+  const filePath = options?.folder ? `${options.folder}/${filename}` : filename;
 
-  const blob = await put(path, file, {
-    access: "public",
-    addRandomSuffix: true,
-  });
+  if (useVercelBlob) {
+    // Use Vercel Blob in production
+    const blob = await put(filePath, file, {
+      access: "public",
+      addRandomSuffix: true,
+    });
 
-  return {
-    url: blob.url,
-    size: file.size,
-    contentType: file.type || "application/octet-stream",
-  };
+    return {
+      url: blob.url,
+      size: file.size,
+      contentType: file.type || "application/octet-stream",
+    };
+  } else {
+    // Use local filesystem in development
+    const uploadDir = path.join(process.cwd(), "public", "uploads");
+    const folderPath = options?.folder
+      ? path.join(uploadDir, options.folder)
+      : uploadDir;
+
+    // Create directory if it doesn't exist
+    if (!existsSync(folderPath)) {
+      await mkdir(folderPath, { recursive: true });
+    }
+
+    // Add timestamp to filename for uniqueness
+    const timestamp = Date.now();
+    const uniqueFilename = `${timestamp}-${filename}`;
+    const fullPath = path.join(folderPath, uniqueFilename);
+
+    // Convert File/Blob to Buffer and write
+    const arrayBuffer = await file.arrayBuffer();
+    const buffer = Buffer.from(arrayBuffer);
+    await writeFile(fullPath, buffer);
+
+    // Return URL relative to public folder
+    const relativePath = options?.folder
+      ? `/uploads/${options.folder}/${uniqueFilename}`
+      : `/uploads/${uniqueFilename}`;
+
+    return {
+      url: relativePath,
+      size: file.size,
+      contentType: file.type || "application/octet-stream",
+    };
+  }
 }
 
 /**
- * Delete a file from Vercel Blob Storage
+ * Delete a file from Vercel Blob Storage or local filesystem
  */
 export async function deleteFile(url: string): Promise<void> {
-  await del(url);
+  if (useVercelBlob) {
+    await del(url);
+  } else {
+    // Delete from local filesystem
+    if (url.startsWith("/uploads/")) {
+      const filePath = path.join(process.cwd(), "public", url);
+      try {
+        await unlink(filePath);
+      } catch (error) {
+        console.error("Error deleting local file:", error);
+      }
+    }
+  }
 }
 
 /**
@@ -46,14 +99,19 @@ export async function listFiles(prefix?: string): Promise<
     uploadedAt: Date;
   }>
 > {
-  const { blobs } = await list({ prefix });
+  if (useVercelBlob) {
+    const { blobs } = await list({ prefix });
 
-  return blobs.map((blob) => ({
-    url: blob.url,
-    pathname: blob.pathname,
-    size: blob.size,
-    uploadedAt: blob.uploadedAt,
-  }));
+    return blobs.map((blob) => ({
+      url: blob.url,
+      pathname: blob.pathname,
+      size: blob.size,
+      uploadedAt: blob.uploadedAt,
+    }));
+  } else {
+    // Local filesystem doesn't support listing - return empty
+    return [];
+  }
 }
 
 /**

@@ -513,14 +513,15 @@ export default function StudentDetailPage() {
     setEditScoreDialogOpen(true);
   };
 
-  // Fetch mentors and professors for edit form
+  // Fetch mentors, professors, packs, and schools for forms
   useEffect(() => {
     async function fetchTeamOptions() {
       try {
-        const [mentorsRes, professorsRes, packsRes] = await Promise.all([
+        const [mentorsRes, professorsRes, packsRes, schoolsRes] = await Promise.all([
           fetch("/api/mentors"),
           fetch("/api/professors"),
           fetch("/api/packs"),
+          fetch("/api/schools"),
         ]);
 
         if (mentorsRes.ok) {
@@ -536,6 +537,11 @@ export default function StudentDetailPage() {
         if (packsRes.ok) {
           const data = await packsRes.json();
           setAvailablePacks(data.packs || []);
+        }
+
+        if (schoolsRes.ok) {
+          const data = await schoolsRes.json();
+          setAvailableSchools(data.schools || []);
         }
       } catch (error) {
         console.error("Error fetching options:", error);

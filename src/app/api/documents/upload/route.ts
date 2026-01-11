@@ -142,7 +142,7 @@ export async function POST(request: NextRequest) {
   } catch (error) {
     console.error("Error uploading document:", error);
     return NextResponse.json(
-      { error: "Erreur lors de l'upload du document" },
+      { error: `Erreur lors de l'upload: ${error instanceof Error ? error.message : String(error)}` },
       { status: 500 }
     );
   }

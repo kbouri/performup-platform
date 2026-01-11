@@ -114,6 +114,9 @@ export async function POST(req: NextRequest) {
             }
         }
 
+        // Get admin user for receivedBy
+        const adminUser = await requireAdmin(req);
+
         // Create payment and allocations in a transaction
         const result = await prisma.$transaction(async (tx) => {
             // Create the payment
@@ -127,7 +130,8 @@ export async function POST(req: NextRequest) {
                     referenceNumber: validatedData.referenceNumber,
                     bankAccountId: validatedData.bankAccountId,
                     notes: validatedData.notes,
-                    type: "STUDENT",
+                    receivedBy: adminUser.id,
+                    status: "VALIDATED",
                 },
             });
 

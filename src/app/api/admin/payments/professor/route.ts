@@ -2,8 +2,6 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db/prisma";
 import { requireAdmin } from "@/lib/middleware/rbac";
 import { recordProfessorPaymentSchema } from "@/lib/validation/payment.schemas";
-import { TransactionJournalService } from "@/lib/services/transaction-journal.service";
-import { ValidationService } from "@/lib/services/validation.service";
 import { ZodError } from "zod";
 
 /**
@@ -13,7 +11,7 @@ import { ZodError } from "zod";
 export async function POST(req: NextRequest) {
     try {
         // Check admin authentication
-        await requireAdmin(req);
+        const adminUser = await requireAdmin(req);
 
         // Parse and validate request body
         const body = await req.json();
@@ -44,6 +42,12 @@ export async function POST(req: NextRequest) {
         // Verify mission exists, belongs to professor, and is validated
         const mission = await prisma.mission.findUnique({
             where: { id: validatedData.missionId },
+            include: {
+                transactions: {
+                    where: { type: "PROFESSOR_PAYMENT" },
+                    select: { amount: true },
+                },
+            },
         });
 
         if (!mission) {
@@ -79,8 +83,9 @@ export async function POST(req: NextRequest) {
             );
         }
 
-        // Calculate remaining amount to pay
-        const remainingAmount = mission.amount - mission.paidAmount;
+        // Calculate paid amount from existing transactions
+        const paidAmount = mission.transactions.reduce((sum, tx) => sum + tx.amount, 0);
+        const remainingAmount = mission.amount - paidAmount;
 
         if (validatedData.amount > remainingAmount) {
             return NextResponse.json(
@@ -113,38 +118,12 @@ export async function POST(req: NextRequest) {
             );
         }
 
-        // Run business validations
-        const validationResult = await ValidationService.validatePayment({
-            personId: validatedData.professorId,
-            personType: "PROFESSOR",
-            amount: validatedData.amount,
-            currency: validatedData.currency,
-            paymentDate: new Date(validatedData.paymentDate),
-            bankAccountId: validatedData.bankAccountId,
-            referenceNumber: validatedData.referenceNumber,
-        });
-
-        // Check for blocking errors
-        const blockingErrors = validationResult.alerts.filter(
-            (alert) => alert.level === "ERROR"
-        );
-        if (blockingErrors.length > 0) {
-            return NextResponse.json(
-                {
-                    error: "Payment validation failed",
-                    details: blockingErrors,
-                },
-                { status: 400 }
-            );
-        }
-
         // Create payment and update mission in a transaction
         const result = await prisma.$transaction(async (tx) => {
             // Create the payment
             const payment = await tx.payment.create({
                 data: {
                     professorId: validatedData.professorId,
-                    missionId: validatedData.missionId,
                     amount: validatedData.amount,
                     currency: validatedData.currency,
                     paymentDate: new Date(validatedData.paymentDate),
@@ -152,42 +131,43 @@ export async function POST(req: NextRequest) {
                     referenceNumber: validatedData.referenceNumber,
                     bankAccountId: validatedData.bankAccountId,
                     notes: validatedData.notes,
-                    type: "PROFESSOR",
+                    receivedBy: adminUser.id,
+                    status: "VALIDATED",
                 },
             });
 
-            // Update mission paid amount
-            const newPaidAmount = mission.paidAmount + validatedData.amount;
+            // Update mission status if fully paid
+            const newPaidAmount = paidAmount + validatedData.amount;
             const newStatus = newPaidAmount >= mission.amount ? "PAID" : "VALIDATED";
 
             const updatedMission = await tx.mission.update({
                 where: { id: validatedData.missionId },
                 data: {
-                    paidAmount: newPaidAmount,
                     status: newStatus,
+                    paidAt: newStatus === "PAID" ? new Date() : undefined,
                 },
             });
 
-            // Create journal entries
-            const transactions =
-                await TransactionJournalService.recordProfessorPayment(
-                    {
-                        paymentId: payment.id,
-                        professorId: validatedData.professorId,
-                        missionId: validatedData.missionId,
-                        amount: validatedData.amount,
-                        currency: validatedData.currency,
-                        paymentDate: new Date(validatedData.paymentDate),
-                        bankAccountId: validatedData.bankAccountId,
-                        referenceNumber: validatedData.referenceNumber,
-                    },
-                    tx
-                );
+            // Create transaction entry for accounting
+            const transaction = await tx.transaction.create({
+                data: {
+                    transactionNumber: `TX-PRF-${Date.now()}`,
+                    date: new Date(validatedData.paymentDate),
+                    type: "PROFESSOR_PAYMENT",
+                    amount: validatedData.amount,
+                    currency: validatedData.currency,
+                    description: `Payment to professor ${professor.user.name} for mission ${mission.title}`,
+                    sourceAccountId: validatedData.bankAccountId,
+                    paymentId: payment.id,
+                    professorId: validatedData.professorId,
+                    missionId: validatedData.missionId,
+                },
+            });
 
             return {
                 payment,
                 mission: updatedMission,
-                transactions,
+                transaction,
             };
         });
 
@@ -196,10 +176,7 @@ export async function POST(req: NextRequest) {
             {
                 payment: result.payment,
                 mission: result.mission,
-                transactions: result.transactions,
-                validationAlerts: validationResult.alerts.filter(
-                    (alert) => alert.level !== "ERROR"
-                ),
+                transaction: result.transaction,
             },
             { status: 201 }
         );

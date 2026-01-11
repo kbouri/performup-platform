@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db/prisma";
-import { hash } from "bcryptjs";
+import { hashPassword } from "@/lib/password";
 import { sendWelcomeEmail } from "@/lib/email";
 
 // POST /api/team/accept-invitation - Accepter une invitation (public)
@@ -74,8 +74,8 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Hash password
-    const hashedPassword = await hash(password, 12);
+    // Hash password using Better Auth scrypt format
+    const hashedPassword = hashPassword(password);
 
     // Parse metadata
     const metadata = invitation.metadata as {

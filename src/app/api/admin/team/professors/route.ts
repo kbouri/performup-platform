@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { auth, isAdmin } from "@/lib/auth";
 import { prisma } from "@/lib/db/prisma";
 import { headers } from "next/headers";
-import { hash } from "bcryptjs";
+import { hashPassword } from "@/lib/password";
 
 // GET /api/admin/team/professors - Liste tous les professeurs
 export async function GET(request: NextRequest) {
@@ -185,10 +185,8 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Hash password if provided
-    const hashedPassword = password
-      ? await hash(password, 12)
-      : await hash(email + Date.now(), 12);
+    // Hash password using Better Auth scrypt format
+    const hashedPassword = hashPassword(password || email + Date.now());
 
     // Create user and professor in transaction
     const result = await prisma.$transaction(async (tx) => {

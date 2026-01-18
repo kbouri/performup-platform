@@ -287,9 +287,12 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Check if user already exists
-    const existingUser = await prisma.user.findUnique({
-      where: { email: personalInfo.email },
+    // Normalize email to lowercase for case-insensitive login
+    const normalizedEmail = personalInfo.email.toLowerCase().trim();
+
+    // Check if user already exists (case-insensitive)
+    const existingUser = await prisma.user.findFirst({
+      where: { email: { equals: normalizedEmail, mode: "insensitive" } },
     });
 
     if (existingUser) {
@@ -304,8 +307,8 @@ export async function POST(request: NextRequest) {
       // Create the user
       const user = await tx.user.create({
         data: {
-          email: personalInfo.email,
-          name: `${personalInfo.firstName || ""} ${personalInfo.lastName || ""}`.trim() || personalInfo.email,
+          email: normalizedEmail,
+          name: `${personalInfo.firstName || ""} ${personalInfo.lastName || ""}`.trim() || normalizedEmail,
           firstName: personalInfo.firstName,
           lastName: personalInfo.lastName,
           phone: personalInfo.phone,

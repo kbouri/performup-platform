@@ -122,11 +122,19 @@ export default function QuotesPage() {
       if (res.ok) {
         const data = await res.json();
         // Filter students who have packs and don't have a validated quote
-        setStudents(data.students.map((s: { id: string; name: string; email: string; packs?: Array<{ status: string }> }) => ({
+        setStudents(data.students.map((s: {
+          id: string;
+          name: string | null;
+          firstName?: string | null;
+          lastName?: string | null;
+          email: string;
+          packs?: Array<{ status: string }>
+        }) => ({
           id: s.id,
-          name: s.name,
+          name: s.name || `${s.firstName || ''} ${s.lastName || ''}`.trim() || s.email,
           email: s.email,
           hasPacks: (s.packs?.filter(p => p.status === "active")?.length || 0) > 0,
+          hasQuote: false, // Will be updated by quotes fetch
         })));
       }
     } catch (error) {

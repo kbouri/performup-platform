@@ -155,18 +155,18 @@ export default function MissionsPage() {
 
       if (mentorsRes.ok) {
         const data = await mentorsRes.json();
-        setMentors(data.mentors.map((m: { id: string; name: string; email: string }) => ({
+        setMentors(data.mentors.map((m: { id: string; name: string | null; email: string }) => ({
           id: m.id,
-          name: m.name,
+          name: m.name || m.email,
           email: m.email,
         })));
       }
 
       if (professorsRes.ok) {
         const data = await professorsRes.json();
-        setProfessors(data.professors.map((p: { id: string; name: string; email: string; type: string }) => ({
+        setProfessors(data.professors.map((p: { id: string; name: string | null; email: string; type: string }) => ({
           id: p.id,
-          name: p.name,
+          name: p.name || p.email,
           email: p.email,
           type: p.type,
         })));

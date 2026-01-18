@@ -32,6 +32,8 @@ import {
   Plus,
   CreditCard,
   AlertTriangle,
+  Trash2,
+  Sparkles,
 } from "lucide-react";
 
 interface QuoteItem {
@@ -102,11 +104,80 @@ export default function QuoteDetailPage() {
   const [isScheduleDialogOpen, setIsScheduleDialogOpen] = useState(false);
   const [submittingSchedule, setSubmittingSchedule] = useState(false);
 
-  const [scheduleForm, setScheduleForm] = useState({
-    numberOfPayments: "3",
-    startDate: new Date().toISOString().split("T")[0],
-    frequency: "MONTHLY",
-  });
+  // Manual schedule entries
+  const [scheduleEntries, setScheduleEntries] = useState<Array<{
+    id: string;
+    dueDate: string;
+    amount: string;
+  }>>([
+    { id: "1", dueDate: new Date().toISOString().split("T")[0], amount: "" },
+  ]);
+
+  // Calculate totals for schedule entries
+  const calculateScheduleTotals = () => {
+    if (!quote) return { allocated: 0, remaining: quote?.totalAmount || 0 };
+
+    const allocated = scheduleEntries.reduce((sum, entry) => {
+      const amount = parseFloat(entry.amount) || 0;
+      return sum + Math.round(amount * 100);
+    }, 0);
+
+    return {
+      allocated,
+      remaining: quote.totalAmount - allocated,
+    };
+  };
+
+  const addScheduleEntry = () => {
+    const lastEntry = scheduleEntries[scheduleEntries.length - 1];
+    const lastDate = lastEntry ? new Date(lastEntry.dueDate) : new Date();
+    lastDate.setMonth(lastDate.getMonth() + 1);
+
+    setScheduleEntries([
+      ...scheduleEntries,
+      {
+        id: String(Date.now()),
+        dueDate: lastDate.toISOString().split("T")[0],
+        amount: "",
+      },
+    ]);
+  };
+
+  const removeScheduleEntry = (id: string) => {
+    if (scheduleEntries.length > 1) {
+      setScheduleEntries(scheduleEntries.filter((e) => e.id !== id));
+    }
+  };
+
+  const updateScheduleEntry = (id: string, field: "dueDate" | "amount", value: string) => {
+    setScheduleEntries(
+      scheduleEntries.map((e) => (e.id === id ? { ...e, [field]: value } : e))
+    );
+  };
+
+  const setLastEntryToRemaining = () => {
+    if (!quote || scheduleEntries.length === 0) return;
+
+    const totals = calculateScheduleTotals();
+    const lastIndex = scheduleEntries.length - 1;
+    const lastEntry = scheduleEntries[lastIndex];
+
+    // Calculate remaining without the last entry
+    const allocatedWithoutLast = scheduleEntries.slice(0, -1).reduce((sum, entry) => {
+      const amount = parseFloat(entry.amount) || 0;
+      return sum + Math.round(amount * 100);
+    }, 0);
+
+    const remainingForLast = quote.totalAmount - allocatedWithoutLast;
+
+    setScheduleEntries(
+      scheduleEntries.map((e, i) =>
+        i === lastIndex
+          ? { ...e, amount: (remainingForLast / 100).toFixed(2) }
+          : e
+      )
+    );
+  };
 
   const fetchQuote = useCallback(async () => {
     try {
@@ -153,19 +224,39 @@ export default function QuoteDetailPage() {
   async function generateSchedule(e: React.FormEvent) {
     e.preventDefault();
     if (!quote) return;
+
+    // Validate entries
+    const totals = calculateScheduleTotals();
+    if (Math.abs(totals.remaining) > 1) {
+      alert(`Le total des echeances (${formatAmount(totals.allocated, quote.currency)}) ne correspond pas au montant du devis (${formatAmount(quote.totalAmount, quote.currency)}). Difference: ${formatAmount(totals.remaining, quote.currency)}`);
+      return;
+    }
+
+    // Validate all entries have dates and amounts
+    for (const entry of scheduleEntries) {
+      if (!entry.dueDate || !entry.amount || parseFloat(entry.amount) <= 0) {
+        alert("Chaque echeance doit avoir une date et un montant valide");
+        return;
+      }
+    }
+
     setSubmittingSchedule(true);
     try {
       const res = await fetch(`/api/admin/accounting/quotes/${quote.id}/schedule`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          numberOfPayments: parseInt(scheduleForm.numberOfPayments),
-          startDate: scheduleForm.startDate,
-          frequency: scheduleForm.frequency,
+          schedules: scheduleEntries.map((e) => ({
+            dueDate: e.dueDate,
+            amount: Math.round(parseFloat(e.amount) * 100),
+          })),
         }),
       });
       if (res.ok) {
         setIsScheduleDialogOpen(false);
+        setScheduleEntries([
+          { id: "1", dueDate: new Date().toISOString().split("T")[0], amount: "" },
+        ]);
         fetchQuote();
       } else {
         const error = await res.json();
@@ -284,67 +375,109 @@ export default function QuoteDetailPage() {
                     Generer echeancier
                   </Button>
                 </DialogTrigger>
-                <DialogContent>
+                <DialogContent className="max-w-lg">
                   <DialogHeader>
-                    <DialogTitle>Generer l&apos;echeancier</DialogTitle>
+                    <DialogTitle>Creer l&apos;echeancier</DialogTitle>
                   </DialogHeader>
                   <form onSubmit={generateSchedule} className="space-y-4">
-                    <div>
-                      <Label>Nombre d&apos;echeances</Label>
-                      <Input
-                        type="number"
-                        min="1"
-                        max="24"
-                        value={scheduleForm.numberOfPayments}
-                        onChange={(e) =>
-                          setScheduleForm({ ...scheduleForm, numberOfPayments: e.target.value })
-                        }
-                      />
-                    </div>
-                    <div>
-                      <Label>Date de debut</Label>
-                      <Input
-                        type="date"
-                        value={scheduleForm.startDate}
-                        onChange={(e) =>
-                          setScheduleForm({ ...scheduleForm, startDate: e.target.value })
-                        }
-                      />
-                    </div>
-                    <div>
-                      <Label>Frequence</Label>
-                      <Select
-                        value={scheduleForm.frequency}
-                        onValueChange={(v) => setScheduleForm({ ...scheduleForm, frequency: v })}
-                      >
-                        <SelectTrigger>
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="MONTHLY">Mensuelle</SelectItem>
-                          <SelectItem value="QUARTERLY">Trimestrielle</SelectItem>
-                        </SelectContent>
-                      </Select>
-                    </div>
+                    {/* Summary */}
                     <div className="bg-muted/50 p-3 rounded-lg text-sm">
-                      <p>
-                        Total: <strong>{formatAmount(quote.totalAmount, quote.currency)}</strong>
-                      </p>
-                      <p>
-                        Par echeance:{" "}
-                        <strong>
-                          {formatAmount(
-                            Math.round(quote.totalAmount / parseInt(scheduleForm.numberOfPayments || "1")),
-                            quote.currency
-                          )}
-                        </strong>
-                      </p>
+                      <div className="flex justify-between">
+                        <span>Total du devis:</span>
+                        <strong>{formatAmount(quote.totalAmount, quote.currency)}</strong>
+                      </div>
+                      <div className="flex justify-between mt-1">
+                        <span>Alloue:</span>
+                        <span className={calculateScheduleTotals().allocated > 0 ? "text-success font-medium" : ""}>
+                          {formatAmount(calculateScheduleTotals().allocated, quote.currency)}
+                        </span>
+                      </div>
+                      <div className="flex justify-between mt-1">
+                        <span>Reste a allouer:</span>
+                        <span className={calculateScheduleTotals().remaining !== 0 ? "text-warning font-medium" : "text-success font-medium"}>
+                          {formatAmount(calculateScheduleTotals().remaining, quote.currency)}
+                        </span>
+                      </div>
                     </div>
-                    <Button type="submit" className="w-full" disabled={submittingSchedule}>
+
+                    {/* Schedule Entries */}
+                    <div className="space-y-3">
+                      <Label>Echeances ({scheduleEntries.length})</Label>
+                      {scheduleEntries.map((entry, index) => (
+                        <div key={entry.id} className="flex items-center gap-2">
+                          <div className="flex h-7 w-7 items-center justify-center rounded-full bg-muted text-xs font-medium shrink-0">
+                            {index + 1}
+                          </div>
+                          <Input
+                            type="date"
+                            value={entry.dueDate}
+                            onChange={(e) => updateScheduleEntry(entry.id, "dueDate", e.target.value)}
+                            className="flex-1"
+                          />
+                          <div className="relative flex-1">
+                            <Input
+                              type="number"
+                              step="0.01"
+                              min="0"
+                              placeholder="Montant"
+                              value={entry.amount}
+                              onChange={(e) => updateScheduleEntry(entry.id, "amount", e.target.value)}
+                              className="pr-12"
+                            />
+                            <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-muted-foreground">
+                              {quote.currency}
+                            </span>
+                          </div>
+                          {scheduleEntries.length > 1 && (
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="icon"
+                              onClick={() => removeScheduleEntry(entry.id)}
+                              className="shrink-0"
+                            >
+                              <Trash2 className="h-4 w-4 text-muted-foreground" />
+                            </Button>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+
+                    {/* Actions */}
+                    <div className="flex gap-2">
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        onClick={addScheduleEntry}
+                        className="flex-1"
+                      >
+                        <Plus className="mr-2 h-4 w-4" />
+                        Ajouter echeance
+                      </Button>
+                      {scheduleEntries.length > 0 && calculateScheduleTotals().remaining > 0 && (
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          onClick={setLastEntryToRemaining}
+                          className="flex-1"
+                        >
+                          <Sparkles className="mr-2 h-4 w-4" />
+                          Reste sur derniere
+                        </Button>
+                      )}
+                    </div>
+
+                    <Button
+                      type="submit"
+                      className="w-full"
+                      disabled={submittingSchedule || Math.abs(calculateScheduleTotals().remaining) > 1}
+                    >
                       {submittingSchedule ? (
                         <Loader2 className="h-4 w-4 animate-spin" />
                       ) : (
-                        "Generer"
+                        "Creer l'echeancier"
                       )}
                     </Button>
                   </form>

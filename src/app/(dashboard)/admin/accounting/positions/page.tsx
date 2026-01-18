@@ -464,6 +464,8 @@ export default function PositionsPage() {
         }
       />
 
+      <AccountingNav />
+
       {/* Global Totals Summary */}
       <div className="grid gap-4 md:grid-cols-4 mb-6">
         <Card>

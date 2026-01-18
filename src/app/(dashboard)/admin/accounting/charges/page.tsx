@@ -549,6 +549,8 @@ export default function ChargesPage() {
         }
       />
 
+      <AccountingNav />
+
       {/* Summary Cards */}
       <div className="grid gap-4 md:grid-cols-4 mb-6">
         {Object.entries(totalsByCurrency).map(([currency, total]) => (

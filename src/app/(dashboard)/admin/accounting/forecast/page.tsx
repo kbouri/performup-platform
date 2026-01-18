@@ -214,6 +214,8 @@ export default function ForecastPage() {
         }
       />
 
+      <AccountingNav />
+
       {/* Current Treasury Summary */}
       <div className="grid gap-4 md:grid-cols-4 mb-6">
         {Object.entries(adminTotalsByCurrency).map(([currency, balance]) => (

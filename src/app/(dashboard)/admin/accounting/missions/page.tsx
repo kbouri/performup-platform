@@ -487,6 +487,8 @@ export default function MissionsPage() {
         }
       />
 
+      <AccountingNav />
+
       {/* Stats Cards */}
       <div className="grid gap-4 md:grid-cols-5 mb-6">
         <Card>

@@ -217,6 +217,8 @@ export default function JournalPage() {
         }
       />
 
+      <AccountingNav />
+
       {/* Summary Cards */}
       {summary && (
         <div className="grid gap-4 md:grid-cols-4 mb-6">

@@ -384,14 +384,14 @@ export default function MissionsPage() {
                 <div>
                   <Label>Etudiant (optionnel)</Label>
                   <Select
-                    value={createForm.studentId}
-                    onValueChange={(v) => setCreateForm({ ...createForm, studentId: v })}
+                    value={createForm.studentId || "_none"}
+                    onValueChange={(v) => setCreateForm({ ...createForm, studentId: v === "_none" ? "" : v })}
                   >
                     <SelectTrigger>
                       <SelectValue placeholder="Aucun etudiant specifique" />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="">Aucun</SelectItem>
+                      <SelectItem value="_none">Aucun</SelectItem>
                       {students.map((s) => (
                         <SelectItem key={s.id} value={s.id}>
                           {s.name}

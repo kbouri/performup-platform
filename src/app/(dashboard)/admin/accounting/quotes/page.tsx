@@ -280,7 +280,7 @@ export default function QuotesPage() {
                       <SelectValue placeholder="Meme que le devis (EUR)" />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="">EUR (defaut)</SelectItem>
+                      <SelectItem value="EUR">EUR (defaut)</SelectItem>
                       <SelectItem value="MAD">MAD</SelectItem>
                       <SelectItem value="USD">USD</SelectItem>
                     </SelectContent>

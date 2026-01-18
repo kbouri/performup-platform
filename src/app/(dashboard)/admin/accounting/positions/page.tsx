@@ -418,16 +418,16 @@ export default function PositionsPage() {
                 <div>
                   <Label>Compte source (optionnel)</Label>
                   <Select
-                    value={distributionForm.sourceAccountId}
+                    value={distributionForm.sourceAccountId || "_none"}
                     onValueChange={(v) =>
-                      setDistributionForm({ ...distributionForm, sourceAccountId: v })
+                      setDistributionForm({ ...distributionForm, sourceAccountId: v === "_none" ? "" : v })
                     }
                   >
                     <SelectTrigger>
                       <SelectValue placeholder="Aucun (pas de transaction)" />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="">Aucun</SelectItem>
+                      <SelectItem value="_none">Aucun</SelectItem>
                       {getAccountsByCurrency(distributionForm.currency).map((a) => (
                         <SelectItem key={a.id} value={a.id}>
                           {a.accountName} - {formatAmount(a.balance, a.currency)}

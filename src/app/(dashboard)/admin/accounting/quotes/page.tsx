@@ -122,11 +122,11 @@ export default function QuotesPage() {
       if (res.ok) {
         const data = await res.json();
         // Filter students who have packs and don't have a validated quote
-        setStudents(data.students.map((s: { id: string; name: string; email: string; packsCount?: number }) => ({
+        setStudents(data.students.map((s: { id: string; name: string; email: string; packs?: Array<{ status: string }> }) => ({
           id: s.id,
           name: s.name,
           email: s.email,
-          hasPacks: (s.packsCount || 0) > 0,
+          hasPacks: (s.packs?.filter(p => p.status === "active")?.length || 0) > 0,
         })));
       }
     } catch (error) {
@@ -237,21 +237,27 @@ export default function QuotesPage() {
               <form onSubmit={handleCreateQuote} className="space-y-4">
                 <div>
                   <Label>Etudiant</Label>
-                  <Select
-                    value={createForm.studentId}
-                    onValueChange={(v) => setCreateForm({ ...createForm, studentId: v })}
-                  >
-                    <SelectTrigger>
-                      <SelectValue placeholder="Selectionner un etudiant" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {eligibleStudents.map((s) => (
-                        <SelectItem key={s.id} value={s.id}>
-                          {s.name} ({s.email})
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
+                  {eligibleStudents.length === 0 ? (
+                    <p className="text-sm text-muted-foreground py-2">
+                      Aucun etudiant eligible. Assurez-vous qu&apos;un etudiant a au moins un pack actif.
+                    </p>
+                  ) : (
+                    <Select
+                      value={createForm.studentId}
+                      onValueChange={(v) => setCreateForm({ ...createForm, studentId: v })}
+                    >
+                      <SelectTrigger>
+                        <SelectValue placeholder="Selectionner un etudiant" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {eligibleStudents.map((s) => (
+                          <SelectItem key={s.id} value={s.id}>
+                            {s.name} ({s.email})
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  )}
                   <p className="text-xs text-muted-foreground mt-1">
                     Seuls les etudiants avec des packs actifs sont affiches
                   </p>

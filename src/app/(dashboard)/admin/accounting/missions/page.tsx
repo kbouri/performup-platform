@@ -336,37 +336,49 @@ export default function MissionsPage() {
                 <div>
                   <Label>{createForm.assigneeType === "mentor" ? "Mentor" : "Professeur"}</Label>
                   {createForm.assigneeType === "mentor" ? (
-                    <Select
-                      value={createForm.mentorId}
-                      onValueChange={(v) => setCreateForm({ ...createForm, mentorId: v })}
-                    >
-                      <SelectTrigger>
-                        <SelectValue placeholder="Selectionner un mentor" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {mentors.map((m) => (
-                          <SelectItem key={m.id} value={m.id}>
-                            {m.name} ({m.email})
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
+                    mentors.length === 0 ? (
+                      <p className="text-sm text-muted-foreground py-2">
+                        Aucun mentor disponible. Creez d&apos;abord un mentor dans Equipe &gt; Mentors.
+                      </p>
+                    ) : (
+                      <Select
+                        value={createForm.mentorId}
+                        onValueChange={(v) => setCreateForm({ ...createForm, mentorId: v })}
+                      >
+                        <SelectTrigger>
+                          <SelectValue placeholder="Selectionner un mentor" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {mentors.map((m) => (
+                            <SelectItem key={m.id} value={m.id}>
+                              {m.name} ({m.email})
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    )
                   ) : (
-                    <Select
-                      value={createForm.professorId}
-                      onValueChange={(v) => setCreateForm({ ...createForm, professorId: v })}
-                    >
-                      <SelectTrigger>
-                        <SelectValue placeholder="Selectionner un professeur" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {professors.map((p) => (
-                          <SelectItem key={p.id} value={p.id}>
-                            {p.name} ({p.type})
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
+                    professors.length === 0 ? (
+                      <p className="text-sm text-muted-foreground py-2">
+                        Aucun professeur disponible. Creez d&apos;abord un professeur dans Equipe &gt; Professeurs.
+                      </p>
+                    ) : (
+                      <Select
+                        value={createForm.professorId}
+                        onValueChange={(v) => setCreateForm({ ...createForm, professorId: v })}
+                      >
+                        <SelectTrigger>
+                          <SelectValue placeholder="Selectionner un professeur" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {professors.map((p) => (
+                            <SelectItem key={p.id} value={p.id}>
+                              {p.name} ({p.type})
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    )
                   )}
                 </div>
                 <div>

@@ -112,6 +112,11 @@ const adminNavItems: NavItem[] = [
     icon: BarChart3,
     roles: ["ADMIN"],
   },
+  {
+    title: "Messages",
+    href: "/messages",
+    icon: MessageSquare,
+  },
 ];
 
 const mentorNavItems: NavItem[] = [
@@ -188,6 +193,11 @@ const professorNavItems: NavItem[] = [
     title: "Comptabilité",
     href: "/professor/accounting",
     icon: Wallet,
+  },
+  {
+    title: "Messages",
+    href: "/messages",
+    icon: MessageSquare,
   },
 ];
 

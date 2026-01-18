@@ -62,7 +62,33 @@ export async function POST(
       );
     }
 
+    // Devises supportees
+    const SUPPORTED_CURRENCIES = ["EUR", "MAD", "USD"];
+
+    // Valider chaque echeance
+    for (const schedule of schedules) {
+      if (!schedule.amount || schedule.amount <= 0) {
+        return NextResponse.json(
+          { error: "Chaque echeance doit avoir un montant positif" },
+          { status: 400 }
+        );
+      }
+      if (!schedule.dueDate) {
+        return NextResponse.json(
+          { error: "Chaque echeance doit avoir une date d'echeance" },
+          { status: 400 }
+        );
+      }
+      if (schedule.currency && !SUPPORTED_CURRENCIES.includes(schedule.currency)) {
+        return NextResponse.json(
+          { error: `Devise non supportee: ${schedule.currency}. Devises acceptees: ${SUPPORTED_CURRENCIES.join(", ")}` },
+          { status: 400 }
+        );
+      }
+    }
+
     // Verifier que le total des echeances correspond au total du devis
+    // Note: Les montants des echeances sont en EUR (devise contractuelle)
     const schedulesTotal = schedules.reduce(
       (sum: number, s: { amount: number }) => sum + s.amount,
       0
@@ -78,16 +104,20 @@ export async function POST(
     }
 
     // Creer les echeances
+    // currency = devise de paiement attendue (peut etre EUR, MAD, USD)
+    // scheduleCurrency = devise contractuelle de l'echeance (toujours EUR car devis en EUR)
     const createdSchedules = await Promise.all(
       schedules.map(
         async (schedule: { amount: number; dueDate: string; currency?: string }) => {
+          const paymentCurrency = schedule.currency || quote.paymentCurrency || "EUR";
           return prisma.paymentSchedule.create({
             data: {
               studentId: quote.studentId,
               quoteId: quote.id,
               type: "STUDENT_PAYMENT",
-              amount: schedule.amount,
-              currency: schedule.currency || quote.paymentCurrency || "EUR",
+              amount: schedule.amount, // Montant en centimes (EUR contractuel)
+              currency: paymentCurrency, // Devise attendue pour le paiement
+              scheduleCurrency: "EUR", // Devise contractuelle (toujours EUR)
               dueDate: new Date(schedule.dueDate),
               status: "PENDING",
               paidAmount: 0,

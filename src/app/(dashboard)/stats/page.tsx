@@ -8,11 +8,9 @@ import {
   DollarSign,
   GraduationCap,
   UserCheck,
-  BookOpen,
   Building2,
   PieChart,
   BarChart3,
-  Activity,
   Target,
 } from "lucide-react";
 import {
@@ -76,15 +74,21 @@ interface Stats {
 }
 
 const statusLabels: Record<string, string> = {
+  // Statuts étudiants
   EN_DEMARRAGE: "En démarrage",
   EN_COURS: "En cours",
+  FINALISE: "Finalisé",
+  SUSPENDU: "Suspendu",
+  EN_PAUSE: "En pause",
   TERMINE: "Terminé",
   ABANDONNE: "Abandonné",
+  // Statuts essays
   DRAFT: "Brouillon",
   IN_PROGRESS: "En cours",
   REVIEW: "En révision",
   FINAL: "Final",
   SUBMITTED: "Soumis",
+  // Statuts candidatures écoles
   TARGET: "Cible",
   APPLIED: "Candidature envoyée",
   INTERVIEW: "Entretien",
@@ -94,15 +98,21 @@ const statusLabels: Record<string, string> = {
 };
 
 const statusColors: Record<string, string> = {
+  // Statuts étudiants
   EN_DEMARRAGE: "bg-yellow-500",
   EN_COURS: "bg-blue-500",
+  FINALISE: "bg-green-600",
+  SUSPENDU: "bg-gray-500",
+  EN_PAUSE: "bg-orange-400",
   TERMINE: "bg-green-500",
   ABANDONNE: "bg-red-500",
+  // Statuts essays
   DRAFT: "bg-gray-400",
   IN_PROGRESS: "bg-blue-500",
   REVIEW: "bg-orange-500",
   FINAL: "bg-green-500",
   SUBMITTED: "bg-purple-500",
+  // Statuts candidatures écoles
   TARGET: "bg-blue-400",
   APPLIED: "bg-indigo-500",
   INTERVIEW: "bg-amber-500",
@@ -268,20 +278,20 @@ export default function StatsPage() {
         <Card className="bg-gradient-to-br from-amber-500 to-amber-600 text-white">
           <CardHeader className="pb-2">
             <CardTitle className="text-sm font-medium opacity-90">
-              Paiements en attente
+              Moyenne étudiants/mentor
             </CardTitle>
           </CardHeader>
           <CardContent>
             <div className="flex items-center justify-between">
               <div>
                 <div className="text-3xl font-bold">
-                  {stats.financial.pendingAmount.toLocaleString("fr-FR")} €
+                  {stats.kpis.avgStudentsPerMentor}
                 </div>
                 <p className="text-xs opacity-75">
-                  {stats.financial.pendingCount} paiements
+                  {stats.team.activeMentors} mentors actifs
                 </p>
               </div>
-              <Activity className="h-10 w-10 opacity-50" />
+              <UserCheck className="h-10 w-10 opacity-50" />
             </div>
           </CardContent>
         </Card>

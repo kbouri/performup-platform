@@ -122,6 +122,16 @@ export async function POST(
           ? "PARTIAL"
           : schedule.status;
 
+      // Creer l'enregistrement PaymentAllocation pour tracer l'allocation
+      await prisma.paymentAllocation.create({
+        data: {
+          paymentId: id,
+          scheduleId: allocation.scheduleId,
+          amount: allocation.amount,
+          currency: payment.currency,
+        },
+      });
+
       const updatedSchedule = await prisma.paymentSchedule.update({
         where: { id: allocation.scheduleId },
         data: {

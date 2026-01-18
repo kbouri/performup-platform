@@ -203,6 +203,8 @@ async function seedBankAccounts() {
           currency: accountData.currency,
           country: accountData.country || null,
           iban: accountData.iban || null,
+          economicOwner: adminConfig.adminName.split(" ")[0], // "Karim", "Simo", "Sara"
+          ownerType: "ADMIN",
           isActive: true,
           isAdminOwned: true,
         },

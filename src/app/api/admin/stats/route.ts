@@ -109,7 +109,7 @@ export async function GET() {
       monthlyRevenue.push({ month: monthLabel, amount: (revenueSum._sum.amount || 0) / 100 });
     }
 
-    // 6. Top packs vendus
+    // 6. Top packs vendus (optimisé pour éviter N+1)
     const topPacks = await prisma.studentPack.groupBy({
       by: ["packId"],
       _count: { id: true },
@@ -117,15 +117,18 @@ export async function GET() {
       take: 5,
     });
 
-    const packsWithNames = await Promise.all(
-      topPacks.map(async (p) => {
-        const pack = await prisma.pack.findUnique({
-          where: { id: p.packId },
-          select: { displayName: true },
-        });
-        return { name: pack?.displayName || "Pack inconnu", count: p._count.id };
-      })
-    );
+    // Récupérer tous les packs en une seule requête
+    const packIds = topPacks.map((p) => p.packId);
+    const packs = await prisma.pack.findMany({
+      where: { id: { in: packIds } },
+      select: { id: true, displayName: true },
+    });
+    const packNameMap = new Map(packs.map((p) => [p.id, p.displayName]));
+
+    const packsWithNames = topPacks.map((p) => ({
+      name: packNameMap.get(p.packId) || "Pack inconnu",
+      count: p._count.id,
+    }));
 
     // 7. Charge de travail des mentors
     const mentorsWithStudentCount = await prisma.mentor.findMany({

@@ -4,6 +4,8 @@ import { prisma } from "@/lib/db/prisma";
 import { headers } from "next/headers";
 import { hashPassword } from "@/lib/password";
 
+const DEFAULT_PASSWORD = "PerformUp2024!";
+
 // GET /api/admin/team/mentors - Liste tous les mentors
 export async function GET(request: NextRequest) {
   try {
@@ -213,8 +215,8 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Hash password using Better Auth scrypt format
-    const hashedPassword = hashPassword(password || email + Date.now());
+    // Hash password using Better Auth scrypt format (use default if not provided)
+    const hashedPassword = hashPassword(password || DEFAULT_PASSWORD);
 
     // Create user and mentor in transaction
     const result = await prisma.$transaction(async (tx) => {

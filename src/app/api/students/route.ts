@@ -2,6 +2,9 @@ import { NextRequest, NextResponse } from "next/server";
 import { auth, canAccessStudent, canManageStudents } from "@/lib/auth";
 import { prisma } from "@/lib/db/prisma";
 import { headers } from "next/headers";
+import { hashPassword } from "@/lib/password";
+
+const DEFAULT_PASSWORD = "PerformUp2024!";
 
 // GET /api/students - List students with filters and pagination
 export async function GET(request: NextRequest) {
@@ -309,6 +312,17 @@ export async function POST(request: NextRequest) {
           role: "STUDENT",
           emailVerified: false,
           active: true,
+        },
+      });
+
+      // Create account with default password for login
+      const hashedPassword = hashPassword(DEFAULT_PASSWORD);
+      await tx.account.create({
+        data: {
+          userId: user.id,
+          accountId: user.id,
+          providerId: "credential",
+          password: hashedPassword,
         },
       });
 

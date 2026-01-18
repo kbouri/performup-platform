@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from "react";
 import { PageHeader } from "@/components/layout";
+import { AccountingNav } from "@/components/accounting/accounting-nav";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -277,6 +278,8 @@ export default function BankAccountsPage() {
           { label: "Comptes bancaires" },
         ]}
       />
+
+      <AccountingNav />
 
       {/* Summary Cards by Currency */}
       <div className="grid gap-4 md:grid-cols-3 mb-6">

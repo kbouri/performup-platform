@@ -348,12 +348,41 @@ model School {
 }
 
 model SchoolProgram {
-  id        String   @id @default(cuid())
-  schoolId  String
-  name      String // Master in Management (MiM), Master in Finance (MIF)
-  type      String // MiM, MIF, MSc, MBA, Bachelor
-  duration  String? // 2 years, 1 year
-  degree    String? // Master, Bachelor
+  id          String   @id @default(cuid())
+  schoolId    String
+  name        String // Master in Management (MiM), Master in Finance (MIF)
+  type        String // MiM, MIF, MSc, MBA, Bachelor
+  duration    String? // 2 years, 1 year
+  degree      String? // Master, Bachelor
+  description String?  @db.Text // Full description of the program
+  website     String? // Program-specific website
+
+  // Admission requirements
+  requiresGMAT        Boolean @default(false)
+  requiresGRE         Boolean @default(false)
+  requiresTOEFL       Boolean @default(false)
+  requiresIELTS       Boolean @default(false)
+  requiresTAGEMAGE    Boolean @default(false)
+  minGMATScore        Int? // Minimum GMAT score
+  minGREScore         Int? // Minimum GRE score
+  minTOEFLScore       Int? // Minimum TOEFL score
+  minIELTSScore       Float? // Minimum IELTS score (e.g., 7.0)
+  otherRequirements   String? @db.Text // Other requirements in text form
+
+  // Statistics
+  acceptanceRate      Float? // e.g., 0.15 for 15%
+  avgGMATScore        Int? // Average GMAT of admitted students
+  avgGREScore         Int? // Average GRE of admitted students
+  classSize           Int? // Average class size
+  internationalPct    Float? // Percentage of international students
+  avgWorkExperience   Float? // Average years of work experience
+  avgAge              Float? // Average age of students
+  tuitionFees         Int? // Tuition in EUR (cents)
+  tuitionCurrency     String? @default("EUR")
+
+  // Internal notes
+  internalNotes String? @db.Text // Admin notes about the program
+
   active    Boolean  @default(true)
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -363,10 +392,55 @@ model SchoolProgram {
   essays         Essay[]
   essayQuestions EssayQuestion[]
   studentSchools StudentSchool[]
+  deadlines      ProgramDeadline[]
+  documents      ProgramDocument[]
 
   @@index([schoolId])
   @@index([active])
   @@index([type])
+}
+
+// Deadlines per round for a program
+model ProgramDeadline {
+  id        String   @id @default(cuid())
+  programId String
+  round     String // Round 1, Round 2, Round 3, Early Decision, etc.
+  deadline  DateTime // Application deadline
+  decisionDate DateTime? // Expected decision date
+  notes     String? @db.Text
+
+  active    Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  program SchoolProgram @relation(fields: [programId], references: [id], onDelete: Cascade)
+
+  @@unique([programId, round])
+  @@index([programId])
+  @@index([deadline])
+}
+
+// Documents associated with a program (guides, tips, etc.)
+model ProgramDocument {
+  id          String   @id @default(cuid())
+  programId   String
+  name        String
+  description String?  @db.Text
+  fileUrl     String
+  type        String   @default("other") // guide, example, brochure, checklist, other
+  fileSize    Int? // in bytes
+  category    String?  // Admission, Essay, Interview, etc.
+  year        Int? // Year of the document
+  isPublic    Boolean  @default(false) // If true, visible to students targeting this program
+  uploadedBy  String? // User ID who uploaded
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  program SchoolProgram @relation(fields: [programId], references: [id], onDelete: Cascade)
+
+  @@index([programId])
+  @@index([category])
 }
 
 model StudentSchool {
@@ -531,6 +605,57 @@ model TaskSchedule {
 
   @@index([taskId])
   @@index([scheduledFor])
+}
+
+// ============================================
+// TASK TEMPLATES (Library of workflows)
+// ============================================
+
+model TaskTemplateGroup {
+  id          String   @id @default(cuid())
+  name        String // Ex: "Onboarding Étudiant", "Préparation GMAT"
+  description String?  @db.Text
+  category    String   @default("GENERAL") // ONBOARDING, GMAT, ESSAY, ORAL, CV, GENERAL
+  targetRole  String?  // STUDENT, MENTOR, PROFESSOR - null = tous
+  color       String?  // Pour l'affichage
+  icon        String?  // Icône lucide
+  order       Int      @default(0)
+  active      Boolean  @default(true)
+  createdBy   String
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  templates TaskTemplate[]
+
+  @@index([category])
+  @@index([targetRole])
+  @@index([active])
+}
+
+model TaskTemplate {
+  id              String   @id @default(cuid())
+  groupId         String?
+  title           String
+  description     String?  @db.Text
+  category        String   @default("GENERAL") // QUANT, VERBAL, ESSAY, CV, ORAL, GENERAL
+  timing          String   @default("STANDALONE") // BEFORE_EVENT, AFTER_EVENT, STANDALONE
+  durationMinutes Int      @default(60)
+  daysFromStart   Int      @default(0) // Jours après l'assignation pour la deadline
+  priority        String   @default("medium") // low, medium, high, urgent
+  order           Int      @default(0)
+  isCollaborative Boolean  @default(false)
+  assignToRole    String?  // STUDENT, MENTOR, PROFESSOR - qui reçoit la tâche
+  notifyRoles     String[] // Qui notifier quand la tâche est créée
+  active          Boolean  @default(true)
+  createdBy       String
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  group TaskTemplateGroup? @relation(fields: [groupId], references: [id], onDelete: SetNull)
+
+  @@index([groupId])
+  @@index([category])
+  @@index([active])
 }
 
 // ============================================
@@ -790,11 +915,16 @@ model EssayQuestion {
   id             String   @id @default(cuid())
   schoolId       String
   programId      String?
+  round          String? // Round 1, Round 2, etc. Null means applies to all rounds
+  year           Int? // Academic year (e.g., 2025 for 2024-2025 intake)
   questionNumber Int // 1, 2, 3, etc.
   questionText   String   @db.Text
+  questionTips   String?  @db.Text // Tips/guidance for answering this question
   wordLimit      Int? // Word limit (ex: 500)
   characterLimit Int? // Character limit
   isRequired     Boolean  @default(true)
+  isOptional     Boolean  @default(false) // Some essays are "choose 1 of 3"
+  optionalGroup  String? // Group optional essays together (e.g., "group_a")
   order          Int // Display order
   active         Boolean  @default(true)
   createdAt      DateTime @default(now())
@@ -804,9 +934,11 @@ model EssayQuestion {
   program   SchoolProgram?  @relation(fields: [programId], references: [id])
   responses EssayResponse[]
 
-  @@unique([schoolId, programId, questionNumber])
+  @@unique([schoolId, programId, questionNumber, round, year])
   @@index([schoolId])
   @@index([programId])
+  @@index([round])
+  @@index([year])
   @@index([active])
 }
 

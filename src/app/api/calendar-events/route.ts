@@ -16,6 +16,8 @@ export async function GET(request: NextRequest) {
 
     const { searchParams } = new URL(request.url);
     const studentId = searchParams.get("studentId");
+    const mentorId = searchParams.get("mentorId");
+    const professorId = searchParams.get("professorId");
     const startDate = searchParams.get("startDate");
     const endDate = searchParams.get("endDate");
     const eventType = searchParams.get("eventType");
@@ -41,6 +43,18 @@ export async function GET(request: NextRequest) {
     // Student filter
     if (studentId) {
       where.studentId = studentId;
+    }
+
+    // Mentor filter - get events for students assigned to this mentor
+    if (mentorId) {
+      where.student = {
+        mentorId: mentorId,
+      };
+    }
+
+    // Professor filter - get events where this professor is instructor
+    if (professorId) {
+      where.instructorId = professorId;
     }
 
     // Access control

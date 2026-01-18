@@ -19,7 +19,7 @@ export async function POST(
         }
 
         const body = await request.json();
-        const { schoolId, programId, priority, status } = body;
+        const { schoolId, programId, priority, status, createEssayTasks } = body;
 
         // Check availability
         const existing = await prisma.studentSchoolApplication.findUnique({
@@ -45,11 +45,74 @@ export async function POST(
             },
             include: {
                 school: true,
-                program: true
+                program: {
+                    include: {
+                        essayQuestions: {
+                            where: { active: true },
+                            orderBy: [{ round: "asc" }, { order: "asc" }]
+                        }
+                    }
+                }
             }
         });
 
-        return NextResponse.json(application, { status: 201 });
+        // Auto-create essay entries and tasks for each essay question
+        if (createEssayTasks !== false && application.program?.essayQuestions?.length > 0) {
+            const student = await prisma.student.findUnique({
+                where: { id },
+                select: { id: true, mentorId: true }
+            });
+
+            for (const essayQuestion of application.program.essayQuestions) {
+                // Create the essay entry
+                const essay = await prisma.essay.create({
+                    data: {
+                        studentId: id,
+                        programId: application.programId,
+                        essayQuestionId: essayQuestion.id,
+                        title: `${application.school.name} - ${essayQuestion.question.substring(0, 50)}...`,
+                        content: "",
+                        status: "not_started",
+                        wordCount: 0
+                    }
+                });
+
+                // Create a task for writing the essay
+                await prisma.task.create({
+                    data: {
+                        studentId: id,
+                        title: `Rédiger essay: ${application.school.name} - ${essayQuestion.round}`,
+                        description: `Question: ${essayQuestion.question}${essayQuestion.wordLimit ? `\n\nLimite: ${essayQuestion.wordLimit} mots` : ""}${essayQuestion.questionTips ? `\n\nConseils: ${essayQuestion.questionTips}` : ""}`,
+                        type: "essay",
+                        status: "todo",
+                        priority: "high",
+                        createdBy: session.user.id,
+                        essayId: essay.id
+                    }
+                });
+
+                // If student has a mentor, also create a review task for the mentor
+                if (student?.mentorId) {
+                    await prisma.task.create({
+                        data: {
+                            studentId: id,
+                            title: `Relire essay: ${application.school.name} - ${essayQuestion.round}`,
+                            description: `Relecture de l'essay pour ${application.school.name}.\n\nQuestion: ${essayQuestion.question}`,
+                            type: "essay_review",
+                            status: "todo",
+                            priority: "medium",
+                            createdBy: session.user.id,
+                            essayId: essay.id
+                        }
+                    });
+                }
+            }
+        }
+
+        return NextResponse.json({
+            ...application,
+            essaysCreated: application.program?.essayQuestions?.length || 0
+        }, { status: 201 });
     } catch (error) {
         console.error("Error creating application:", error);
         return NextResponse.json(

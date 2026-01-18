@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState, useMemo } from "react";
+import { useRouter } from "next/navigation";
 import { PageHeader } from "@/components/layout";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -74,6 +75,7 @@ const programTypeColors: Record<string, string> = {
 };
 
 export default function SchoolsPage() {
+  const router = useRouter();
   const [schools, setSchools] = useState<School[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState("");
@@ -408,7 +410,7 @@ export default function SchoolsPage() {
               <Card
                 key={school.id}
                 className="cursor-pointer hover:border-performup-blue/50 transition-colors"
-                onClick={() => setSelectedSchool(school)}
+                onClick={() => router.push(`/admin/schools/${school.id}`)}
               >
                 <CardHeader className="pb-3">
                   <div className="flex items-start justify-between">
@@ -495,7 +497,7 @@ export default function SchoolsPage() {
                       <Card
                         key={school.id}
                         className="cursor-pointer hover:border-performup-blue/50 transition-colors"
-                        onClick={() => setSelectedSchool(school)}
+                        onClick={() => router.push(`/admin/schools/${school.id}`)}
                       >
                         <CardContent className="pt-4">
                           <div className="flex items-center justify-between mb-2">

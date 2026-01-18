@@ -27,6 +27,13 @@ import {
   Filter,
   Grid,
   List,
+  Loader2,
+  CheckCircle,
+  ClipboardList,
+  Play,
+  Users,
+  Calendar,
+  Clock,
 } from "lucide-react";
 import {
   Card,
@@ -60,6 +67,7 @@ import {
   DropdownMenuTrigger,
   DropdownMenuSeparator,
 } from "@/components/ui/dropdown-menu";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { formatFileSize, formatDate } from "@/lib/utils";
 
 interface LibraryDocument {
@@ -106,6 +114,39 @@ interface Stats {
   categoriesCount: number;
 }
 
+interface TaskTemplate {
+  id: string;
+  groupId: string | null;
+  title: string;
+  description: string | null;
+  category: string;
+  timing: string;
+  durationMinutes: number;
+  daysFromStart: number;
+  priority: string;
+  order: number;
+  isCollaborative: boolean;
+  assignToRole: string | null;
+  notifyRoles: string[];
+  active: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
+interface TaskTemplateGroup {
+  id: string;
+  name: string;
+  description: string | null;
+  category: string;
+  targetRole: string | null;
+  color: string | null;
+  icon: string | null;
+  order: number;
+  active: boolean;
+  templates: TaskTemplate[];
+  _count: { templates: number };
+}
+
 // Categories for the folder structure
 const FOLDER_CATEGORIES = [
   { id: "test-prep", name: "Ressources Test", icon: "📚", subcategories: ["GRE", "GMAT", "Tage Mage"] },
@@ -129,6 +170,39 @@ export default function LibraryPage() {
   const [selectedDocument, setSelectedDocument] = useState<LibraryDocument | null>(null);
   const [showUploadDialog, setShowUploadDialog] = useState(false);
   const [showDetailDialog, setShowDetailDialog] = useState(false);
+
+  // Task Templates state
+  const [activeTab, setActiveTab] = useState<"documents" | "templates">("documents");
+  const [templateGroups, setTemplateGroups] = useState<TaskTemplateGroup[]>([]);
+  const [standaloneTemplates, setStandaloneTemplates] = useState<TaskTemplate[]>([]);
+  const [loadingTemplates, setLoadingTemplates] = useState(false);
+  const [showTemplateDialog, setShowTemplateDialog] = useState(false);
+  const [showGroupDialog, setShowGroupDialog] = useState(false);
+  const [showAssignDialog, setShowAssignDialog] = useState(false);
+  const [selectedTemplate, setSelectedTemplate] = useState<TaskTemplate | TaskTemplateGroup | null>(null);
+  const [students, setStudents] = useState<Array<{ id: string; name: string; email: string }>>([]);
+  const [selectedStudentId, setSelectedStudentId] = useState<string>("");
+  const [assigning, setAssigning] = useState(false);
+
+  // New template form
+  const [templateForm, setTemplateForm] = useState({
+    title: "",
+    description: "",
+    category: "GENERAL",
+    daysFromStart: 0,
+    priority: "medium",
+    groupId: "none", // Use "none" instead of empty string
+  });
+
+  // New group form
+  const [groupForm, setGroupForm] = useState({
+    name: "",
+    description: "",
+    category: "GENERAL",
+    targetRole: "all", // Use "all" instead of empty string
+    color: "#3B82F6",
+    icon: "clipboard-list",
+  });
   
   // Upload form state
   const [uploadForm, setUploadForm] = useState({
@@ -141,6 +215,10 @@ export default function LibraryPage() {
     packIds: [] as string[],
     newTag: "",
   });
+  const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const [uploading, setUploading] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState(0);
+  const [dragActive, setDragActive] = useState(false);
 
   const fetchDocuments = useCallback(async () => {
     setLoading(true);
@@ -176,10 +254,53 @@ export default function LibraryPage() {
     }
   }, []);
 
+  const fetchTemplates = useCallback(async () => {
+    setLoadingTemplates(true);
+    try {
+      const response = await fetch("/api/task-templates");
+      if (response.ok) {
+        const data = await response.json();
+        setTemplateGroups(data.groups || []);
+        setStandaloneTemplates(data.standaloneTemplates || []);
+      }
+    } catch (error) {
+      console.error("Error fetching templates:", error);
+    } finally {
+      setLoadingTemplates(false);
+    }
+  }, []);
+
+  const fetchStudents = useCallback(async () => {
+    try {
+      const response = await fetch("/api/students?limit=100");
+      if (response.ok) {
+        const data = await response.json();
+        setStudents(
+          (data.students || [])
+            .filter((s: { id: string; user?: { name: string | null; email: string } }) => s.user)
+            .map((s: { id: string; user: { name: string | null; email: string } }) => ({
+              id: s.id,
+              name: s.user.name || s.user.email,
+              email: s.user.email,
+            }))
+        );
+      }
+    } catch (error) {
+      console.error("Error fetching students:", error);
+    }
+  }, []);
+
   useEffect(() => {
     fetchDocuments();
     fetchPacks();
   }, [fetchDocuments, fetchPacks]);
+
+  useEffect(() => {
+    if (activeTab === "templates") {
+      fetchTemplates();
+      fetchStudents();
+    }
+  }, [activeTab, fetchTemplates, fetchStudents]);
 
   const toggleFolder = (folderId: string) => {
     setExpandedFolders((prev) =>
@@ -225,19 +346,77 @@ export default function LibraryPage() {
     }
   };
 
+  const handleDrag = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (e.type === "dragenter" || e.type === "dragover") {
+      setDragActive(true);
+    } else if (e.type === "dragleave") {
+      setDragActive(false);
+    }
+  };
+
+  const handleDrop = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setDragActive(false);
+    if (e.dataTransfer.files && e.dataTransfer.files[0]) {
+      handleFileSelect(e.dataTransfer.files[0]);
+    }
+  };
+
+  const handleFileSelect = (file: File) => {
+    setSelectedFile(file);
+    // Auto-fill name if empty
+    if (!uploadForm.name) {
+      const nameWithoutExt = file.name.replace(/\.[^/.]+$/, "");
+      setUploadForm((prev) => ({ ...prev, name: nameWithoutExt }));
+    }
+  };
+
   const handleUploadSubmit = async () => {
-    // In a real implementation, this would handle file upload to Vercel Blob
-    // For now, we'll just create a placeholder document
+    if (!selectedFile) {
+      alert("Veuillez sélectionner un fichier");
+      return;
+    }
+
+    if (!uploadForm.name) {
+      alert("Veuillez entrer un nom pour le document");
+      return;
+    }
+
+    setUploading(true);
+    setUploadProgress(0);
+
     try {
+      // Step 1: Upload file to Vercel Blob
+      setUploadProgress(20);
+      const formData = new FormData();
+      formData.append("file", selectedFile);
+
+      const uploadRes = await fetch("/api/upload", {
+        method: "POST",
+        body: formData,
+      });
+
+      if (!uploadRes.ok) {
+        const error = await uploadRes.json();
+        throw new Error(error.error || "Erreur lors de l'upload du fichier");
+      }
+
+      const { url } = await uploadRes.json();
+      setUploadProgress(60);
+
+      // Step 2: Create document in database
       const response = await fetch("/api/library", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           name: uploadForm.name,
           description: uploadForm.description,
-          fileUrl: "https://example.com/placeholder.pdf", // Would come from blob upload
-          fileSize: 1024000,
-          contentType: "application/pdf",
+          fileUrl: url,
+          fileSize: selectedFile.size,
+          contentType: selectedFile.type,
           numPages: 1,
           category: uploadForm.category,
           isPrivate: uploadForm.isPrivate,
@@ -247,8 +426,11 @@ export default function LibraryPage() {
         }),
       });
 
+      setUploadProgress(100);
+
       if (response.ok) {
         setShowUploadDialog(false);
+        setSelectedFile(null);
         setUploadForm({
           name: "",
           description: "",
@@ -260,9 +442,16 @@ export default function LibraryPage() {
           newTag: "",
         });
         fetchDocuments();
+      } else {
+        const error = await response.json();
+        throw new Error(error.error || "Erreur lors de la création du document");
       }
     } catch (error) {
       console.error("Error uploading document:", error);
+      alert(error instanceof Error ? error.message : "Erreur lors de l'upload");
+    } finally {
+      setUploading(false);
+      setUploadProgress(0);
     }
   };
 
@@ -292,23 +481,222 @@ export default function LibraryPage() {
     }));
   };
 
+  // Task template handlers
+  const handleCreateGroup = async () => {
+    if (!groupForm.name) {
+      alert("Le nom du groupe est requis");
+      return;
+    }
+
+    try {
+      const payload = {
+        ...groupForm,
+        targetRole: groupForm.targetRole === "all" ? null : groupForm.targetRole,
+      };
+
+      const response = await fetch("/api/task-templates/groups", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+
+      const data = await response.json();
+
+      if (response.ok) {
+        setShowGroupDialog(false);
+        setGroupForm({
+          name: "",
+          description: "",
+          category: "GENERAL",
+          targetRole: "all",
+          color: "#3B82F6",
+          icon: "clipboard-list",
+        });
+        fetchTemplates();
+      } else {
+        alert(data.error || "Erreur lors de la création du groupe");
+      }
+    } catch (error) {
+      console.error("Error creating group:", error);
+      alert("Erreur de connexion au serveur");
+    }
+  };
+
+  const handleCreateTemplate = async () => {
+    if (!templateForm.title) {
+      alert("Le titre est requis");
+      return;
+    }
+
+    try {
+      const payload = {
+        ...templateForm,
+        groupId: templateForm.groupId === "none" ? null : templateForm.groupId,
+      };
+
+      const response = await fetch("/api/task-templates", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+
+      const data = await response.json();
+
+      if (response.ok) {
+        setShowTemplateDialog(false);
+        setTemplateForm({
+          title: "",
+          description: "",
+          category: "GENERAL",
+          daysFromStart: 0,
+          priority: "medium",
+          groupId: "none",
+        });
+        fetchTemplates();
+      } else {
+        alert(data.error || "Erreur lors de la création du template");
+      }
+    } catch (error) {
+      console.error("Error creating template:", error);
+      alert("Erreur de connexion au serveur");
+    }
+  };
+
+  const handleDeleteTemplate = async (id: string) => {
+    if (!confirm("Êtes-vous sûr de vouloir supprimer ce template ?")) return;
+
+    try {
+      const response = await fetch(`/api/task-templates/${id}`, {
+        method: "DELETE",
+      });
+
+      if (response.ok) {
+        fetchTemplates();
+      }
+    } catch (error) {
+      console.error("Error deleting template:", error);
+    }
+  };
+
+  const handleDeleteGroup = async (id: string) => {
+    if (!confirm("Êtes-vous sûr de vouloir supprimer ce groupe ?")) return;
+
+    try {
+      const response = await fetch(`/api/task-templates/groups/${id}`, {
+        method: "DELETE",
+      });
+
+      if (response.ok) {
+        fetchTemplates();
+      }
+    } catch (error) {
+      console.error("Error deleting group:", error);
+    }
+  };
+
+  const handleAssignTemplate = async () => {
+    if (!selectedStudentId || !selectedTemplate) {
+      alert("Veuillez sélectionner un étudiant");
+      return;
+    }
+
+    setAssigning(true);
+    try {
+      const response = await fetch(`/api/task-templates/${selectedTemplate.id}/assign`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          studentId: selectedStudentId,
+          startDate: new Date().toISOString(),
+        }),
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        alert(`${data.count} tâche(s) créée(s) avec succès !`);
+        setShowAssignDialog(false);
+        setSelectedStudentId("");
+        setSelectedTemplate(null);
+      } else {
+        const error = await response.json();
+        alert(error.error || "Erreur lors de l'assignation");
+      }
+    } catch (error) {
+      console.error("Error assigning template:", error);
+    } finally {
+      setAssigning(false);
+    }
+  };
+
+  const getPriorityColor = (priority: string) => {
+    switch (priority) {
+      case "urgent": return "bg-red-100 text-red-700";
+      case "high": return "bg-orange-100 text-orange-700";
+      case "medium": return "bg-yellow-100 text-yellow-700";
+      case "low": return "bg-green-100 text-green-700";
+      default: return "bg-gray-100 text-gray-700";
+    }
+  };
+
+  const getCategoryIcon = (category: string) => {
+    switch (category) {
+      case "ONBOARDING": return "🚀";
+      case "GMAT": return "📊";
+      case "ESSAY": return "✍️";
+      case "ORAL": return "🎤";
+      case "CV": return "📄";
+      default: return "📋";
+    }
+  };
+
   return (
     <div className="space-y-6">
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-display font-bold text-foreground">
-            Bibliothèque de Documents
+            Bibliothèque
           </h1>
           <p className="text-muted-foreground mt-1">
-            Gérez les ressources partagées avec les étudiants
+            Documents partagés et templates de tâches
           </p>
         </div>
-        <Button onClick={() => setShowUploadDialog(true)}>
-          <Upload className="h-4 w-4 mr-2" />
-          Upload document
-        </Button>
+        <div className="flex gap-2">
+          {activeTab === "documents" && (
+            <Button onClick={() => setShowUploadDialog(true)}>
+              <Upload className="h-4 w-4 mr-2" />
+              Upload document
+            </Button>
+          )}
+          {activeTab === "templates" && (
+            <>
+              <Button variant="outline" onClick={() => setShowGroupDialog(true)}>
+                <Folder className="h-4 w-4 mr-2" />
+                Nouveau groupe
+              </Button>
+              <Button onClick={() => setShowTemplateDialog(true)}>
+                <Plus className="h-4 w-4 mr-2" />
+                Nouveau template
+              </Button>
+            </>
+          )}
+        </div>
       </div>
+
+      {/* Tabs */}
+      <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as "documents" | "templates")}>
+        <TabsList className="grid w-full max-w-md grid-cols-2">
+          <TabsTrigger value="documents" className="flex items-center gap-2">
+            <FileText className="h-4 w-4" />
+            Documents
+          </TabsTrigger>
+          <TabsTrigger value="templates" className="flex items-center gap-2">
+            <ClipboardList className="h-4 w-4" />
+            Templates de tâches
+          </TabsTrigger>
+        </TabsList>
+
+        <TabsContent value="documents" className="mt-6">
 
       {/* Stats Cards */}
       {stats && (
@@ -705,6 +1093,238 @@ export default function LibraryPage() {
           )}
         </div>
       </div>
+        </TabsContent>
+
+        <TabsContent value="templates" className="mt-6">
+          {/* Templates Content */}
+          {loadingTemplates ? (
+            <Card>
+              <CardContent className="p-8 text-center">
+                <Loader2 className="h-8 w-8 animate-spin mx-auto text-performup-blue" />
+                <p className="text-muted-foreground mt-4">Chargement des templates...</p>
+              </CardContent>
+            </Card>
+          ) : templateGroups.length === 0 && standaloneTemplates.length === 0 ? (
+            <Card>
+              <CardContent className="p-8 text-center">
+                <ClipboardList className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
+                <h3 className="font-medium text-lg">Aucun template</h3>
+                <p className="text-muted-foreground mt-1">
+                  Créez des templates de tâches pour automatiser les workflows
+                </p>
+                <div className="flex gap-2 justify-center mt-4">
+                  <Button variant="outline" onClick={() => setShowGroupDialog(true)}>
+                    <Folder className="h-4 w-4 mr-2" />
+                    Créer un groupe
+                  </Button>
+                  <Button onClick={() => setShowTemplateDialog(true)}>
+                    <Plus className="h-4 w-4 mr-2" />
+                    Créer un template
+                  </Button>
+                </div>
+              </CardContent>
+            </Card>
+          ) : (
+            <div className="space-y-6">
+              {/* Template Groups */}
+              {templateGroups.map((group) => (
+                <Card key={group.id}>
+                  <CardHeader className="pb-2">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-3">
+                        <span className="text-2xl">{getCategoryIcon(group.category)}</span>
+                        <div>
+                          <CardTitle className="text-lg">{group.name}</CardTitle>
+                          {group.description && (
+                            <p className="text-sm text-muted-foreground">{group.description}</p>
+                          )}
+                        </div>
+                        <Badge variant="outline">{group._count.templates} tâches</Badge>
+                        {group.targetRole && (
+                          <Badge variant="secondary">
+                            <Users className="h-3 w-3 mr-1" />
+                            {group.targetRole}
+                          </Badge>
+                        )}
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <Button
+                          variant="default"
+                          size="sm"
+                          onClick={() => {
+                            setSelectedTemplate(group);
+                            setShowAssignDialog(true);
+                          }}
+                        >
+                          <Play className="h-4 w-4 mr-1" />
+                          Assigner
+                        </Button>
+                        <DropdownMenu>
+                          <DropdownMenuTrigger asChild>
+                            <Button variant="ghost" size="icon">
+                              <MoreVertical className="h-4 w-4" />
+                            </Button>
+                          </DropdownMenuTrigger>
+                          <DropdownMenuContent align="end">
+                            <DropdownMenuItem onClick={() => {
+                              setTemplateForm({ ...templateForm, groupId: group.id });
+                              setShowTemplateDialog(true);
+                            }}>
+                              <Plus className="h-4 w-4 mr-2" />
+                              Ajouter un template
+                            </DropdownMenuItem>
+                            <DropdownMenuSeparator />
+                            <DropdownMenuItem
+                              className="text-destructive"
+                              onClick={() => handleDeleteGroup(group.id)}
+                            >
+                              <Trash2 className="h-4 w-4 mr-2" />
+                              Supprimer le groupe
+                            </DropdownMenuItem>
+                          </DropdownMenuContent>
+                        </DropdownMenu>
+                      </div>
+                    </div>
+                  </CardHeader>
+                  <CardContent>
+                    {group.templates.length === 0 ? (
+                      <p className="text-sm text-muted-foreground text-center py-4">
+                        Aucun template dans ce groupe
+                      </p>
+                    ) : (
+                      <div className="space-y-2">
+                        {group.templates.map((template, index) => (
+                          <div
+                            key={template.id}
+                            className="flex items-center gap-4 p-3 rounded-lg border hover:bg-muted/50 transition-colors"
+                          >
+                            <div className="flex items-center justify-center w-8 h-8 rounded-full bg-muted text-sm font-medium">
+                              {index + 1}
+                            </div>
+                            <div className="flex-1">
+                              <p className="font-medium text-sm">{template.title}</p>
+                              {template.description && (
+                                <p className="text-xs text-muted-foreground line-clamp-1">
+                                  {template.description}
+                                </p>
+                              )}
+                            </div>
+                            <div className="flex items-center gap-2">
+                              <Badge className={getPriorityColor(template.priority)}>
+                                {template.priority}
+                              </Badge>
+                              {template.daysFromStart > 0 && (
+                                <Badge variant="outline">
+                                  <Calendar className="h-3 w-3 mr-1" />
+                                  J+{template.daysFromStart}
+                                </Badge>
+                              )}
+                              {template.durationMinutes > 0 && (
+                                <Badge variant="outline">
+                                  <Clock className="h-3 w-3 mr-1" />
+                                  {template.durationMinutes}min
+                                </Badge>
+                              )}
+                            </div>
+                            <DropdownMenu>
+                              <DropdownMenuTrigger asChild>
+                                <Button variant="ghost" size="icon-sm">
+                                  <MoreVertical className="h-4 w-4" />
+                                </Button>
+                              </DropdownMenuTrigger>
+                              <DropdownMenuContent align="end">
+                                <DropdownMenuItem onClick={() => {
+                                  setSelectedTemplate(template);
+                                  setShowAssignDialog(true);
+                                }}>
+                                  <Play className="h-4 w-4 mr-2" />
+                                  Assigner
+                                </DropdownMenuItem>
+                                <DropdownMenuSeparator />
+                                <DropdownMenuItem
+                                  className="text-destructive"
+                                  onClick={() => handleDeleteTemplate(template.id)}
+                                >
+                                  <Trash2 className="h-4 w-4 mr-2" />
+                                  Supprimer
+                                </DropdownMenuItem>
+                              </DropdownMenuContent>
+                            </DropdownMenu>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </CardContent>
+                </Card>
+              ))}
+
+              {/* Standalone Templates */}
+              {standaloneTemplates.length > 0 && (
+                <Card>
+                  <CardHeader>
+                    <CardTitle className="text-lg flex items-center gap-2">
+                      <ClipboardList className="h-5 w-5" />
+                      Templates individuels
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="space-y-2">
+                      {standaloneTemplates.map((template) => (
+                        <div
+                          key={template.id}
+                          className="flex items-center gap-4 p-3 rounded-lg border hover:bg-muted/50 transition-colors"
+                        >
+                          <span className="text-xl">{getCategoryIcon(template.category)}</span>
+                          <div className="flex-1">
+                            <p className="font-medium text-sm">{template.title}</p>
+                            {template.description && (
+                              <p className="text-xs text-muted-foreground line-clamp-1">
+                                {template.description}
+                              </p>
+                            )}
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <Badge className={getPriorityColor(template.priority)}>
+                              {template.priority}
+                            </Badge>
+                          </div>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => {
+                              setSelectedTemplate(template);
+                              setShowAssignDialog(true);
+                            }}
+                          >
+                            <Play className="h-4 w-4 mr-1" />
+                            Assigner
+                          </Button>
+                          <DropdownMenu>
+                            <DropdownMenuTrigger asChild>
+                              <Button variant="ghost" size="icon-sm">
+                                <MoreVertical className="h-4 w-4" />
+                              </Button>
+                            </DropdownMenuTrigger>
+                            <DropdownMenuContent align="end">
+                              <DropdownMenuItem
+                                className="text-destructive"
+                                onClick={() => handleDeleteTemplate(template.id)}
+                              >
+                                <Trash2 className="h-4 w-4 mr-2" />
+                                Supprimer
+                              </DropdownMenuItem>
+                            </DropdownMenuContent>
+                          </DropdownMenu>
+                        </div>
+                      ))}
+                    </div>
+                  </CardContent>
+                </Card>
+              )}
+            </div>
+          )}
+        </TabsContent>
+      </Tabs>
 
       {/* Upload Dialog */}
       <Dialog open={showUploadDialog} onOpenChange={setShowUploadDialog}>
@@ -714,12 +1334,76 @@ export default function LibraryPage() {
           </DialogHeader>
           <div className="space-y-4 py-4">
             {/* File Drop Zone */}
-            <div className="border-2 border-dashed rounded-lg p-8 text-center hover:border-performup-blue transition-colors cursor-pointer">
-              <Upload className="h-10 w-10 text-muted-foreground mx-auto mb-3" />
-              <p className="text-sm font-medium">Glissez-déposez un fichier ici</p>
-              <p className="text-xs text-muted-foreground mt-1">ou cliquez pour sélectionner</p>
-              <p className="text-xs text-muted-foreground mt-2">PDF, DOC, DOCX, PPT, XLS, Images - Max 50MB</p>
+            <div
+              className={`border-2 border-dashed rounded-lg p-8 text-center transition-colors cursor-pointer relative ${
+                dragActive
+                  ? "border-performup-blue bg-performup-blue/5"
+                  : selectedFile
+                  ? "border-green-500 bg-green-50"
+                  : "hover:border-performup-blue"
+              }`}
+              onDragEnter={handleDrag}
+              onDragLeave={handleDrag}
+              onDragOver={handleDrag}
+              onDrop={handleDrop}
+              onClick={() => document.getElementById("file-upload-input")?.click()}
+            >
+              <input
+                id="file-upload-input"
+                type="file"
+                className="hidden"
+                accept=".pdf,.doc,.docx,.ppt,.pptx,.xls,.xlsx,.jpg,.jpeg,.png,.gif,.webp"
+                onChange={(e) => {
+                  if (e.target.files?.[0]) {
+                    handleFileSelect(e.target.files[0]);
+                  }
+                }}
+              />
+              {selectedFile ? (
+                <>
+                  <CheckCircle className="h-10 w-10 text-green-500 mx-auto mb-3" />
+                  <p className="text-sm font-medium text-green-700">{selectedFile.name}</p>
+                  <p className="text-xs text-muted-foreground mt-1">
+                    {(selectedFile.size / 1024 / 1024).toFixed(2)} MB
+                  </p>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="mt-2"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setSelectedFile(null);
+                    }}
+                  >
+                    <X className="h-4 w-4 mr-1" />
+                    Supprimer
+                  </Button>
+                </>
+              ) : (
+                <>
+                  <Upload className="h-10 w-10 text-muted-foreground mx-auto mb-3" />
+                  <p className="text-sm font-medium">Glissez-deposez un fichier ici</p>
+                  <p className="text-xs text-muted-foreground mt-1">ou cliquez pour selectionner</p>
+                  <p className="text-xs text-muted-foreground mt-2">PDF, DOC, DOCX, PPT, XLS, Images - Max 50MB</p>
+                </>
+              )}
             </div>
+
+            {/* Upload Progress */}
+            {uploading && (
+              <div className="space-y-2">
+                <div className="flex items-center justify-between text-sm">
+                  <span>Upload en cours...</span>
+                  <span>{uploadProgress}%</span>
+                </div>
+                <div className="w-full bg-muted rounded-full h-2">
+                  <div
+                    className="bg-performup-blue h-2 rounded-full transition-all duration-300"
+                    style={{ width: `${uploadProgress}%` }}
+                  />
+                </div>
+              </div>
+            )}
 
             {/* Document Name */}
             <div>
@@ -842,12 +1526,21 @@ export default function LibraryPage() {
             </div>
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setShowUploadDialog(false)}>
+            <Button variant="outline" onClick={() => setShowUploadDialog(false)} disabled={uploading}>
               Annuler
             </Button>
-            <Button onClick={handleUploadSubmit} disabled={!uploadForm.name}>
-              <Upload className="h-4 w-4 mr-2" />
-              Ajouter à la bibliothèque
+            <Button onClick={handleUploadSubmit} disabled={!uploadForm.name || !selectedFile || uploading}>
+              {uploading ? (
+                <>
+                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                  Upload en cours...
+                </>
+              ) : (
+                <>
+                  <Upload className="h-4 w-4 mr-2" />
+                  Ajouter à la bibliothèque
+                </>
+              )}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -958,6 +1651,230 @@ export default function LibraryPage() {
               </DialogFooter>
             </>
           )}
+        </DialogContent>
+      </Dialog>
+
+      {/* Create Group Dialog */}
+      <Dialog open={showGroupDialog} onOpenChange={setShowGroupDialog}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Créer un groupe de templates</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4 py-4">
+            <div>
+              <label className="text-sm font-medium">Nom du groupe</label>
+              <Input
+                value={groupForm.name}
+                onChange={(e) => setGroupForm((prev) => ({ ...prev, name: e.target.value }))}
+                placeholder="Ex: Onboarding Étudiant"
+                className="mt-1"
+              />
+            </div>
+            <div>
+              <label className="text-sm font-medium">Description</label>
+              <Textarea
+                value={groupForm.description}
+                onChange={(e) => setGroupForm((prev) => ({ ...prev, description: e.target.value }))}
+                placeholder="Description du groupe..."
+                className="mt-1"
+                rows={2}
+              />
+            </div>
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <label className="text-sm font-medium">Catégorie</label>
+                <Select
+                  value={groupForm.category}
+                  onValueChange={(v) => setGroupForm((prev) => ({ ...prev, category: v }))}
+                >
+                  <SelectTrigger className="mt-1">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="GENERAL">Général</SelectItem>
+                    <SelectItem value="ONBOARDING">Onboarding</SelectItem>
+                    <SelectItem value="GMAT">GMAT</SelectItem>
+                    <SelectItem value="ESSAY">Essay</SelectItem>
+                    <SelectItem value="ORAL">Oral</SelectItem>
+                    <SelectItem value="CV">CV</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div>
+                <label className="text-sm font-medium">Rôle cible</label>
+                <Select
+                  value={groupForm.targetRole}
+                  onValueChange={(v) => setGroupForm((prev) => ({ ...prev, targetRole: v }))}
+                >
+                  <SelectTrigger className="mt-1">
+                    <SelectValue placeholder="Tous" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">Tous</SelectItem>
+                    <SelectItem value="STUDENT">Étudiant</SelectItem>
+                    <SelectItem value="MENTOR">Mentor</SelectItem>
+                    <SelectItem value="PROFESSOR">Professeur</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowGroupDialog(false)}>
+              Annuler
+            </Button>
+            <Button onClick={handleCreateGroup} disabled={!groupForm.name}>
+              Créer le groupe
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Create Template Dialog */}
+      <Dialog open={showTemplateDialog} onOpenChange={setShowTemplateDialog}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Créer un template de tâche</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4 py-4">
+            <div>
+              <label className="text-sm font-medium">Titre de la tâche</label>
+              <Input
+                value={templateForm.title}
+                onChange={(e) => setTemplateForm((prev) => ({ ...prev, title: e.target.value }))}
+                placeholder="Ex: Préparer les documents d'inscription"
+                className="mt-1"
+              />
+            </div>
+            <div>
+              <label className="text-sm font-medium">Description</label>
+              <Textarea
+                value={templateForm.description}
+                onChange={(e) => setTemplateForm((prev) => ({ ...prev, description: e.target.value }))}
+                placeholder="Description de la tâche..."
+                className="mt-1"
+                rows={2}
+              />
+            </div>
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <label className="text-sm font-medium">Groupe</label>
+                <Select
+                  value={templateForm.groupId}
+                  onValueChange={(v) => setTemplateForm((prev) => ({ ...prev, groupId: v }))}
+                >
+                  <SelectTrigger className="mt-1">
+                    <SelectValue placeholder="Sans groupe" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="none">Sans groupe</SelectItem>
+                    {templateGroups.map((g) => (
+                      <SelectItem key={g.id} value={g.id}>
+                        {g.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div>
+                <label className="text-sm font-medium">Priorité</label>
+                <Select
+                  value={templateForm.priority}
+                  onValueChange={(v) => setTemplateForm((prev) => ({ ...prev, priority: v }))}
+                >
+                  <SelectTrigger className="mt-1">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="low">Basse</SelectItem>
+                    <SelectItem value="medium">Moyenne</SelectItem>
+                    <SelectItem value="high">Haute</SelectItem>
+                    <SelectItem value="urgent">Urgente</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+            <div>
+              <label className="text-sm font-medium">Jours après assignation (deadline)</label>
+              <Input
+                type="number"
+                value={templateForm.daysFromStart}
+                onChange={(e) => setTemplateForm((prev) => ({ ...prev, daysFromStart: parseInt(e.target.value) || 0 }))}
+                min={0}
+                className="mt-1"
+              />
+              <p className="text-xs text-muted-foreground mt-1">
+                0 = deadline aujourd&apos;hui, 7 = dans une semaine
+              </p>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowTemplateDialog(false)}>
+              Annuler
+            </Button>
+            <Button onClick={handleCreateTemplate} disabled={!templateForm.title}>
+              Créer le template
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Assign Template Dialog */}
+      <Dialog open={showAssignDialog} onOpenChange={setShowAssignDialog}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Assigner à un étudiant</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4 py-4">
+            {selectedTemplate && (
+              <div className="p-3 bg-muted rounded-lg">
+                <p className="font-medium">
+                  {"name" in selectedTemplate ? selectedTemplate.name : selectedTemplate.title}
+                </p>
+                {"templates" in selectedTemplate && (
+                  <p className="text-sm text-muted-foreground">
+                    {selectedTemplate.templates.length} tâche(s) seront créées
+                  </p>
+                )}
+              </div>
+            )}
+            <div>
+              <label className="text-sm font-medium">Sélectionner un étudiant</label>
+              <Select
+                value={selectedStudentId}
+                onValueChange={setSelectedStudentId}
+              >
+                <SelectTrigger className="mt-1">
+                  <SelectValue placeholder="Choisir un étudiant..." />
+                </SelectTrigger>
+                <SelectContent>
+                  {students.map((student) => (
+                    <SelectItem key={student.id} value={student.id}>
+                      {student.name} ({student.email})
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowAssignDialog(false)}>
+              Annuler
+            </Button>
+            <Button onClick={handleAssignTemplate} disabled={!selectedStudentId || assigning}>
+              {assigning ? (
+                <>
+                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                  Assignation...
+                </>
+              ) : (
+                <>
+                  <Play className="h-4 w-4 mr-2" />
+                  Assigner
+                </>
+              )}
+            </Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
     </div>

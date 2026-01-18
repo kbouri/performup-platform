@@ -37,6 +37,7 @@ export async function GET(request: NextRequest) {
     const search = searchParams.get("search") || "";
     const folderId = searchParams.get("folderId");
     const studentId = searchParams.get("studentId");
+    const targetUserId = searchParams.get("userId"); // Filter by specific user's documents
     const page = parseInt(searchParams.get("page") || "1");
     const limit = parseInt(searchParams.get("limit") || "50");
     const skip = (page - 1) * limit;
@@ -53,56 +54,72 @@ export async function GET(request: NextRequest) {
     // Access control
     const userId = session.user.id;
 
+    // If viewing a specific user's documents (professor, mentor, etc.)
+    if (targetUserId && isAdmin(session.user)) {
+      // Admin viewing a specific user's documents
+      where.ownerId = targetUserId;
+      if (folderId) {
+        where.folderId = folderId;
+        folderWhere.parentId = folderId;
+      } else {
+        where.folderId = null;
+        folderWhere.parentId = null;
+      }
+      folderWhere.createdBy = targetUserId;
+    }
+
     // Determine the student context
     let studentRootFolderId: string | null = null;
 
-    if (studentId && canAccessStudent(session.user)) {
+    if (!targetUserId && studentId && canAccessStudent(session.user)) {
       // Viewing a specific student's documents
       const student = await prisma.student.findUnique({
         where: { id: studentId },
         select: { rootFolderId: true },
       });
       studentRootFolderId = student?.rootFolderId || null;
-    } else if (!studentId) {
+    } else if (!targetUserId && !studentId) {
       // No studentId = viewing user's own documents (not student-specific)
       // For admins/mentors viewing their own space, show only documents they own
       // that are NOT in any student's root folder
     }
 
-    // If we have a specific folder requested, use it
-    if (folderId) {
-      where.folderId = folderId;
-      folderWhere.parentId = folderId;
-    } else if (studentRootFolderId) {
-      // No folder specified but we have a student context - use student's root folder
-      where.folderId = studentRootFolderId;
-      folderWhere.parentId = studentRootFolderId;
-    } else {
-      // No folder and no student context - show root level documents owned by user
-      // Exclude documents that belong to any student's folder structure
-      where.folderId = null;
-      where.ownerId = userId;
-      folderWhere.parentId = null;
+    // If we have a specific folder requested, use it (only if not already set by targetUserId)
+    if (!targetUserId) {
+      if (folderId) {
+        where.folderId = folderId;
+        folderWhere.parentId = folderId;
+      } else if (studentRootFolderId) {
+        // No folder specified but we have a student context - use student's root folder
+        where.folderId = studentRootFolderId;
+        folderWhere.parentId = studentRootFolderId;
+      } else {
+        // No folder and no student context - show root level documents owned by user
+        // Exclude documents that belong to any student's folder structure
+        where.folderId = null;
+        where.ownerId = userId;
+        folderWhere.parentId = null;
 
-      // For non-admin, only show folders they created or have access to
-      if (!isAdmin(session.user)) {
-        // Get all student root folder IDs to exclude them
-        const studentRootFolders = await prisma.student.findMany({
-          where: { rootFolderId: { not: null } },
-          select: { rootFolderId: true },
-        });
-        const studentRootIds = studentRootFolders
-          .map(s => s.rootFolderId)
-          .filter((id): id is string => id !== null);
+        // For non-admin, only show folders they created or have access to
+        if (!isAdmin(session.user)) {
+          // Get all student root folder IDs to exclude them
+          const studentRootFolders = await prisma.student.findMany({
+            where: { rootFolderId: { not: null } },
+            select: { rootFolderId: true },
+          });
+          const studentRootIds = studentRootFolders
+            .map(s => s.rootFolderId)
+            .filter((id): id is string => id !== null);
 
-        if (studentRootIds.length > 0) {
-          folderWhere.id = { notIn: studentRootIds };
+          if (studentRootIds.length > 0) {
+            folderWhere.id = { notIn: studentRootIds };
+          }
         }
       }
     }
 
     // Additional access control for documents
-    if (!isAdmin(session.user) && !studentId) {
+    if (!isAdmin(session.user) && !studentId && !targetUserId) {
       // Non-admin viewing their own space - only their documents
       where.ownerId = userId;
     }

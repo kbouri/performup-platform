@@ -120,6 +120,8 @@ export async function PATCH(
       dueDate,
       category,
       completed,
+      scheduledAt,
+      durationMinutes,
     } = body;
 
     const updatedTask = await prisma.task.update({
@@ -131,6 +133,8 @@ export async function PATCH(
         category: category !== undefined ? category : undefined,
         completed: completed !== undefined ? completed : undefined,
         completedAt: completed === true ? new Date() : completed === false ? null : undefined,
+        scheduledAt: scheduledAt !== undefined ? (scheduledAt ? new Date(scheduledAt) : null) : undefined,
+        durationMinutes: durationMinutes !== undefined ? durationMinutes : undefined,
       },
       include: {
         student: {

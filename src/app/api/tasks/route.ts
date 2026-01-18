@@ -100,6 +100,9 @@ export async function GET(request: NextRequest) {
             name: true,
           },
         },
+        schedules: {
+          orderBy: { scheduledFor: "asc" },
+        },
       },
     });
 
@@ -112,6 +115,8 @@ export async function GET(request: NextRequest) {
       category: task.category,
       completed: task.completed,
       completedAt: task.completedAt,
+      scheduledAt: task.scheduledAt,
+      durationMinutes: task.durationMinutes,
       isRecurring: task.isRecurring,
       recurrenceRule: task.recurrenceRule,
       student: {
@@ -121,6 +126,13 @@ export async function GET(request: NextRequest) {
       },
       calendarEvent: task.calendarEvent,
       document: task.document,
+      schedules: task.schedules.map((s) => ({
+        id: s.id,
+        scheduledFor: s.scheduledFor,
+        completed: s.completed,
+        completedAt: s.completedAt,
+      })),
+      scheduleCount: task.schedules.length,
       createdAt: task.createdAt,
       updatedAt: task.updatedAt,
     }));

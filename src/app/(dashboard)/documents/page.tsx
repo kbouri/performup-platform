@@ -47,7 +47,10 @@ import {
   Folder,
   CheckCircle,
   AlertCircle,
-  Pencil
+  Pencil,
+  Copy,
+  FolderUp,
+  Files
 } from "lucide-react";
 
 interface StudentInfo {
@@ -103,9 +106,17 @@ interface UploadingFile {
   error?: string;
 }
 
+interface UserInfo {
+  id: string;
+  name: string | null;
+  email: string;
+  role?: string;
+}
+
 export default function DocumentsPage() {
   const searchParams = useSearchParams();
   const studentIdParam = searchParams.get("studentId");
+  const userIdParam = searchParams.get("userId");
 
   const [currentFolderId, setCurrentFolderId] = useState<string | null>(null);
   const [folderStack, setFolderStack] = useState<FolderData[]>([]);
@@ -122,7 +133,10 @@ export default function DocumentsPage() {
   const [newFolderName, setNewFolderName] = useState("");
   const [creatingFolder, setCreatingFolder] = useState(false);
   const [studentInfo, setStudentInfo] = useState<StudentInfo | null>(null);
+  const [userInfo, setUserInfo] = useState<UserInfo | null>(null);
+  const [duplicating, setDuplicating] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const folderInputRef = useRef<HTMLInputElement>(null);
 
   // Fetch student info
   useEffect(() => {
@@ -148,12 +162,38 @@ export default function DocumentsPage() {
     fetchStudentInfo();
   }, [studentIdParam]);
 
+  // Fetch user info (for professor/mentor documents)
+  useEffect(() => {
+    async function fetchUserInfo() {
+      if (!userIdParam) {
+        setUserInfo(null);
+        return;
+      }
+      try {
+        const response = await fetch(`/api/users/${userIdParam}`);
+        if (response.ok) {
+          const data = await response.json();
+          setUserInfo({
+            id: data.user.id,
+            name: data.user.name || `${data.user.firstName || ""} ${data.user.lastName || ""}`.trim(),
+            email: data.user.email,
+            role: data.user.role,
+          });
+        }
+      } catch (error) {
+        console.error("Error fetching user info:", error);
+      }
+    }
+    fetchUserInfo();
+  }, [userIdParam]);
+
   const fetchDocuments = useCallback(async () => {
     setLoading(true);
     try {
       const params = new URLSearchParams();
       if (searchQuery) params.set("search", searchQuery);
       if (studentIdParam) params.set("studentId", studentIdParam);
+      if (userIdParam) params.set("userId", userIdParam);
       if (currentFolderId) params.set("folderId", currentFolderId);
 
       const response = await fetch(`/api/documents?${params.toString()}`);
@@ -167,7 +207,7 @@ export default function DocumentsPage() {
     } finally {
       setLoading(false);
     }
-  }, [searchQuery, studentIdParam, currentFolderId]);
+  }, [searchQuery, studentIdParam, userIdParam, currentFolderId]);
 
   useEffect(() => {
     const debounce = setTimeout(() => {
@@ -230,10 +270,10 @@ export default function DocumentsPage() {
 
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files;
-    if (!files) return;
+    if (!files || files.length === 0) return;
 
     const newUploadingFiles: UploadingFile[] = Array.from(files).map((file) => ({
-      id: `${file.name}-${Date.now()}`,
+      id: `${file.name}-${Date.now()}-${Math.random()}`,
       file,
       progress: 0,
       status: "uploading",
@@ -246,6 +286,146 @@ export default function DocumentsPage() {
     newUploadingFiles.forEach((uploadFile) => {
       uploadDocument(uploadFile);
     });
+
+    // Reset input
+    e.target.value = "";
+  };
+
+  const handleFolderSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = e.target.files;
+    if (!files || files.length === 0) return;
+
+    // Group files by their relative folder path
+    const filesByFolder = new Map<string, File[]>();
+
+    for (const file of Array.from(files)) {
+      // webkitRelativePath gives us the relative path including folder name
+      const relativePath = (file as File & { webkitRelativePath?: string }).webkitRelativePath || file.name;
+      const pathParts = relativePath.split("/");
+
+      // Get the folder path (everything except the filename)
+      const folderPath = pathParts.length > 1 ? pathParts.slice(0, -1).join("/") : "";
+
+      if (!filesByFolder.has(folderPath)) {
+        filesByFolder.set(folderPath, []);
+      }
+      filesByFolder.get(folderPath)!.push(file);
+    }
+
+    // First, create the folder structure
+    const folderIdMap = new Map<string, string>();
+    const sortedPaths = Array.from(filesByFolder.keys()).sort();
+
+    for (const folderPath of sortedPaths) {
+      if (!folderPath) continue; // Root level files
+
+      const pathParts = folderPath.split("/");
+      let parentId = currentFolderId;
+      let currentPath = "";
+
+      for (const part of pathParts) {
+        currentPath = currentPath ? `${currentPath}/${part}` : part;
+
+        if (!folderIdMap.has(currentPath)) {
+          // Create this folder
+          try {
+            const res = await fetch("/api/documents/folders", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                name: part,
+                parentId: parentId,
+                studentId: studentIdParam,
+              }),
+            });
+
+            if (res.ok) {
+              const data = await res.json();
+              folderIdMap.set(currentPath, data.folder.id);
+              parentId = data.folder.id;
+            }
+          } catch (error) {
+            console.error("Error creating folder:", error);
+          }
+        } else {
+          parentId = folderIdMap.get(currentPath)!;
+        }
+      }
+    }
+
+    // Now upload files to their respective folders
+    const allFiles: UploadingFile[] = [];
+
+    for (const [folderPath, folderFiles] of filesByFolder) {
+      const targetFolderId = folderPath ? folderIdMap.get(folderPath) : currentFolderId;
+
+      for (const file of folderFiles) {
+        const uploadFile: UploadingFile = {
+          id: `${file.name}-${Date.now()}-${Math.random()}`,
+          file,
+          progress: 0,
+          status: "uploading",
+        };
+        allFiles.push(uploadFile);
+
+        // Upload with the target folder
+        uploadDocumentToFolder(uploadFile, targetFolderId || null);
+      }
+    }
+
+    setUploadingFiles((prev) => [...prev, ...allFiles]);
+    setUploadDialogOpen(true);
+
+    // Refresh after all uploads
+    setTimeout(() => fetchDocuments(), 2000);
+
+    // Reset input
+    e.target.value = "";
+  };
+
+  const uploadDocumentToFolder = async (uploadFile: UploadingFile, targetFolderId: string | null) => {
+    const formData = new FormData();
+    formData.append("file", uploadFile.file);
+    if (targetFolderId) {
+      formData.append("folderId", targetFolderId);
+    }
+    if (studentIdParam) {
+      formData.append("studentId", studentIdParam);
+    }
+
+    try {
+      const response = await fetch("/api/documents/upload", {
+        method: "POST",
+        body: formData,
+      });
+
+      if (response.ok) {
+        setUploadingFiles((prev) =>
+          prev.map((f) =>
+            f.id === uploadFile.id
+              ? { ...f, progress: 100, status: "success" }
+              : f
+          )
+        );
+      } else {
+        const data = await response.json();
+        setUploadingFiles((prev) =>
+          prev.map((f) =>
+            f.id === uploadFile.id
+              ? { ...f, status: "error", error: data.error }
+              : f
+          )
+        );
+      }
+    } catch {
+      setUploadingFiles((prev) =>
+        prev.map((f) =>
+          f.id === uploadFile.id
+            ? { ...f, status: "error", error: "Erreur de connexion" }
+            : f
+        )
+      );
+    }
   };
 
   const uploadDocument = async (uploadFile: UploadingFile) => {
@@ -364,6 +544,50 @@ export default function DocumentsPage() {
     }
   };
 
+  const handleDuplicateDocument = async (docId: string) => {
+    setDuplicating(docId);
+    try {
+      const response = await fetch(`/api/documents/${docId}/duplicate`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ folderId: currentFolderId }),
+      });
+
+      if (response.ok) {
+        fetchDocuments();
+      } else {
+        const data = await response.json();
+        alert(data.error || "Erreur lors de la duplication");
+      }
+    } catch (error) {
+      console.error("Error duplicating document:", error);
+    } finally {
+      setDuplicating(null);
+    }
+  };
+
+  const handleDuplicateFolder = async (folderId: string) => {
+    setDuplicating(folderId);
+    try {
+      const response = await fetch(`/api/documents/folders/${folderId}/duplicate`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ parentId: currentFolderId }),
+      });
+
+      if (response.ok) {
+        fetchDocuments();
+      } else {
+        const data = await response.json();
+        alert(data.error || "Erreur lors de la duplication");
+      }
+    } catch (error) {
+      console.error("Error duplicating folder:", error);
+    } finally {
+      setDuplicating(null);
+    }
+  };
+
   const getFileIcon = (contentType: string) => {
     if (contentType.startsWith("image/")) return ImageIcon;
     if (contentType.includes("pdf")) return FileText;
@@ -395,10 +619,28 @@ export default function DocumentsPage() {
     }
   };
 
+  const getPageTitle = () => {
+    if (studentInfo) return `Documents de ${studentInfo.name || studentInfo.email}`;
+    if (userInfo) return `Documents de ${userInfo.name || userInfo.email}`;
+    return "Documents";
+  };
+
+  const getPageDescription = () => {
+    if (studentInfo) return "Documents accessibles par cet étudiant";
+    if (userInfo) return "Documents de ce membre de l'équipe";
+    return "Gérez vos documents et dossiers";
+  };
+
   const navBreadcrumbs = studentInfo
     ? [
       { label: "Étudiants", href: "/students" },
       { label: studentInfo.name || studentInfo.email, href: `/students/${studentInfo.id}` },
+      { label: "Documents" },
+    ]
+    : userInfo
+    ? [
+      { label: "Équipe", href: "/admin/team" },
+      { label: userInfo.name || userInfo.email },
       { label: "Documents" },
     ]
     : [{ label: "Documents" }];
@@ -406,8 +648,8 @@ export default function DocumentsPage() {
   return (
     <>
       <PageHeader
-        title={studentInfo ? `Documents de ${studentInfo.name || studentInfo.email}` : "Documents"}
-        description={studentInfo ? "Documents accessibles par cet étudiant" : "Gérez vos documents et dossiers"}
+        title={getPageTitle()}
+        description={getPageDescription()}
         breadcrumbs={navBreadcrumbs}
         actions={
           <div className="flex gap-2">
@@ -417,6 +659,12 @@ export default function DocumentsPage() {
                   <ArrowLeft className="mr-2 h-4 w-4" />
                   Retour à la fiche
                 </Link>
+              </Button>
+            )}
+            {userInfo && (
+              <Button variant="outline" onClick={() => window.history.back()}>
+                <ArrowLeft className="mr-2 h-4 w-4" />
+                Retour
               </Button>
             )}
             <Button variant="outline" onClick={() => setCreateFolderOpen(true)}>
@@ -431,10 +679,34 @@ export default function DocumentsPage() {
               className="hidden"
               accept=".pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt,.jpg,.jpeg,.png,.gif,.webp"
             />
-            <Button onClick={() => fileInputRef.current?.click()}>
-              <Upload className="mr-2 h-4 w-4" />
-              Uploader
-            </Button>
+            <input
+              ref={folderInputRef}
+              type="file"
+              // @ts-expect-error webkitdirectory is not in React types
+              webkitdirectory=""
+              directory=""
+              multiple
+              onChange={handleFolderSelect}
+              className="hidden"
+            />
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button>
+                  <Upload className="mr-2 h-4 w-4" />
+                  Uploader
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end">
+                <DropdownMenuItem onClick={() => fileInputRef.current?.click()}>
+                  <Files className="mr-2 h-4 w-4" />
+                  Uploader des fichiers
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={() => folderInputRef.current?.click()}>
+                  <FolderUp className="mr-2 h-4 w-4" />
+                  Uploader un dossier
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
           </div>
         }
       />
@@ -576,6 +848,18 @@ export default function DocumentsPage() {
                           <Pencil className="mr-2 h-4 w-4" />
                           Renommer
                         </DropdownMenuItem>
+                        <DropdownMenuItem
+                          onClick={() => handleDuplicateFolder(folder.id)}
+                          disabled={duplicating === folder.id}
+                        >
+                          {duplicating === folder.id ? (
+                            <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                          ) : (
+                            <Copy className="mr-2 h-4 w-4" />
+                          )}
+                          Dupliquer
+                        </DropdownMenuItem>
+                        <DropdownMenuSeparator />
                         <DropdownMenuItem className="text-error" onClick={() => handleDeleteFolder(folder.id)}>
                           <Trash2 className="mr-2 h-4 w-4" />
                           Supprimer
@@ -651,6 +935,17 @@ export default function DocumentsPage() {
                         <DropdownMenuItem>
                           <Share2 className="mr-2 h-4 w-4" />
                           Partager
+                        </DropdownMenuItem>
+                        <DropdownMenuItem
+                          onClick={() => handleDuplicateDocument(doc.id)}
+                          disabled={duplicating === doc.id}
+                        >
+                          {duplicating === doc.id ? (
+                            <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                          ) : (
+                            <Copy className="mr-2 h-4 w-4" />
+                          )}
+                          Dupliquer
                         </DropdownMenuItem>
                         <DropdownMenuSeparator />
                         {doc.permissions.canEdit && (

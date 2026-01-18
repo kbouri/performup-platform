@@ -61,7 +61,7 @@ async function resetAllPasswords() {
 
     for (const user of users) {
         try {
-            // Check if user has credential account with password
+            // Check if user has credential account
             const account = await prisma.account.findFirst({
                 where: {
                     userId: user.id,
@@ -69,20 +69,16 @@ async function resetAllPasswords() {
                 },
             });
 
-            if (account && account.password) {
-                alreadyOk++;
-                continue;
-            }
-
-            // Hash the default password
+            // Hash the default password (new hash each time for different salt)
             const hashedPassword = await hashPassword(DEFAULT_PASSWORD);
 
             if (account) {
-                // Update existing account without password
+                // Update existing account - FORCE reset password
                 await prisma.account.update({
                     where: { id: account.id },
                     data: { password: hashedPassword },
                 });
+                alreadyOk++;
             } else {
                 // Create new credential account
                 await prisma.account.create({
@@ -93,6 +89,7 @@ async function resetAllPasswords() {
                         password: hashedPassword,
                     },
                 });
+                fixed++;
             }
 
             const displayName = user.firstName && user.lastName
@@ -100,7 +97,6 @@ async function resetAllPasswords() {
                 : user.name || user.email;
 
             console.log(`✅ ${displayName} (${user.email}) - ${user.role}`);
-            fixed++;
         } catch (error) {
             console.error(`❌ Erreur pour ${user.email}:`, error);
             errors++;
@@ -109,10 +105,11 @@ async function resetAllPasswords() {
 
     console.log("\n" + "=".repeat(50));
     console.log(`📊 Résumé:`);
-    console.log(`   - Déjà OK: ${alreadyOk}`);
-    console.log(`   - Corrigés: ${fixed}`);
+    console.log(`   - Comptes mis à jour: ${alreadyOk}`);
+    console.log(`   - Comptes créés: ${fixed}`);
     console.log(`   - Erreurs: ${errors}`);
-    console.log(`\n🔑 Mot de passe par défaut: ${DEFAULT_PASSWORD}`);
+    console.log(`   - Total traités: ${alreadyOk + fixed}`);
+    console.log(`\n🔑 Mot de passe pour TOUS: ${DEFAULT_PASSWORD}`);
 
     await prisma.$disconnect();
 }

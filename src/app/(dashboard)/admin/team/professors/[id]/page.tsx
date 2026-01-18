@@ -19,6 +19,9 @@ import {
   User,
   BookOpen,
   GraduationCap,
+  CalendarDays,
+  FileText,
+  ExternalLink,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
@@ -446,6 +449,14 @@ export default function ProfessorProfilePage() {
           <TabsTrigger value="students">
             Etudiants ({students.length})
           </TabsTrigger>
+          <TabsTrigger value="planning">
+            <CalendarDays className="h-4 w-4 mr-1" />
+            Planning
+          </TabsTrigger>
+          <TabsTrigger value="documents">
+            <FileText className="h-4 w-4 mr-1" />
+            Documents
+          </TabsTrigger>
           <TabsTrigger value="events">Cours recents</TabsTrigger>
           <TabsTrigger value="payments">Paiements</TabsTrigger>
         </TabsList>
@@ -692,6 +703,76 @@ export default function ProfessorProfilePage() {
                   ))}
                 </div>
               )}
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        <TabsContent value="planning" className="space-y-4">
+          <Card>
+            <CardHeader>
+              <div className="flex items-center justify-between">
+                <div>
+                  <CardTitle>Planning du professeur</CardTitle>
+                  <CardDescription>
+                    Consultez les cours et disponibilites
+                  </CardDescription>
+                </div>
+                <Button variant="outline" size="sm" asChild>
+                  <Link href={`/planning?professorId=${professor.id}`}>
+                    <ExternalLink className="h-4 w-4 mr-2" />
+                    Voir en plein ecran
+                  </Link>
+                </Button>
+              </div>
+            </CardHeader>
+            <CardContent>
+              <div className="text-center py-8">
+                <CalendarDays className="h-12 w-12 mx-auto text-muted-foreground mb-4" />
+                <p className="text-muted-foreground mb-4">
+                  Consultez le planning complet de ce professeur
+                </p>
+                <Button asChild>
+                  <Link href={`/planning?professorId=${professor.id}`}>
+                    <CalendarDays className="h-4 w-4 mr-2" />
+                    Ouvrir le planning
+                  </Link>
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        <TabsContent value="documents" className="space-y-4">
+          <Card>
+            <CardHeader>
+              <div className="flex items-center justify-between">
+                <div>
+                  <CardTitle>Documents du professeur</CardTitle>
+                  <CardDescription>
+                    Documents partages par ce professeur
+                  </CardDescription>
+                </div>
+                <Button variant="outline" size="sm" asChild>
+                  <Link href={`/documents?userId=${professor.userId}`}>
+                    <ExternalLink className="h-4 w-4 mr-2" />
+                    Voir tous les documents
+                  </Link>
+                </Button>
+              </div>
+            </CardHeader>
+            <CardContent>
+              <div className="text-center py-8">
+                <FileText className="h-12 w-12 mx-auto text-muted-foreground mb-4" />
+                <p className="text-muted-foreground mb-4">
+                  Consultez les documents partages par ce professeur
+                </p>
+                <Button asChild>
+                  <Link href={`/documents?userId=${professor.userId}`}>
+                    <FileText className="h-4 w-4 mr-2" />
+                    Ouvrir les documents
+                  </Link>
+                </Button>
+              </div>
             </CardContent>
           </Card>
         </TabsContent>

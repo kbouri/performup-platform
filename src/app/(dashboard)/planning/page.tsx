@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { PageHeader } from "@/components/layout";
@@ -41,7 +41,34 @@ import {
   LayoutGrid,
   List,
   ArrowLeft,
+  GripVertical,
+  CheckCircle,
+  Circle,
+  FileText,
+  PenTool,
+  ChevronDown,
+  ChevronUp,
+  X,
+  Trash2,
+  MoreVertical,
+  Repeat,
 } from "lucide-react";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 
 interface StudentInfo {
   id: string;
@@ -72,6 +99,38 @@ interface CalendarEvent {
   } | null;
 }
 
+interface TaskSchedule {
+  id: string;
+  scheduledFor: string;
+  completed: boolean;
+  completedAt: string | null;
+}
+
+interface Task {
+  id: string;
+  title: string;
+  description: string | null;
+  timing: string;
+  dueDate: string;
+  category: string;
+  completed: boolean;
+  completedAt: string | null;
+  scheduledAt: string | null;
+  durationMinutes: number;
+  schedules: TaskSchedule[];
+  scheduleCount: number;
+  student: {
+    id: string;
+    name: string | null;
+    email: string;
+  };
+  calendarEvent: {
+    id: string;
+    title: string;
+    startTime: string;
+  } | null;
+}
+
 interface Student {
   id: string;
   name: string | null;
@@ -86,11 +145,46 @@ interface Professor {
 
 type ViewMode = "week" | "list";
 
+// Drag and drop types
+interface DragItem {
+  type: "task";
+  task: Task;
+}
+
+const HOUR_HEIGHT = 60; // pixels per hour
+const TASK_CATEGORIES = {
+  QUANT: { label: "Quant", color: "bg-blue-500", icon: BookOpen },
+  VERBAL: { label: "Verbal", color: "bg-purple-500", icon: BookOpen },
+  ESSAY: { label: "Essay", color: "bg-green-500", icon: PenTool },
+  CV: { label: "CV", color: "bg-orange-500", icon: FileText },
+  ORAL: { label: "Oral", color: "bg-pink-500", icon: Mic },
+  GENERAL: { label: "General", color: "bg-gray-500", icon: Target },
+};
+
+interface MentorInfo {
+  id: string;
+  userId: string;
+  name: string | null;
+  email: string;
+}
+
+interface ProfessorInfo {
+  id: string;
+  userId: string;
+  name: string | null;
+  email: string;
+  type: string;
+}
+
 export default function PlanningPage() {
   const searchParams = useSearchParams();
   const studentIdParam = searchParams.get("studentId");
+  const mentorIdParam = searchParams.get("mentorId");
+  const professorIdParam = searchParams.get("professorId");
+  const scrollContainerRef = useRef<HTMLDivElement>(null);
 
   const [events, setEvents] = useState<CalendarEvent[]>([]);
+  const [tasks, setTasks] = useState<Task[]>([]);
   const [loading, setLoading] = useState(true);
   const [currentDate, setCurrentDate] = useState(new Date());
   const [viewMode, setViewMode] = useState<ViewMode>("week");
@@ -99,6 +193,20 @@ export default function PlanningPage() {
   const [professors, setProfessors] = useState<Professor[]>([]);
   const [creating, setCreating] = useState(false);
   const [studentInfo, setStudentInfo] = useState<StudentInfo | null>(null);
+  const [mentorInfo, setMentorInfo] = useState<MentorInfo | null>(null);
+  const [professorInfo, setProfessorInfo] = useState<ProfessorInfo | null>(null);
+  const [tasksPanelExpanded, setTasksPanelExpanded] = useState(true);
+
+  // Drag state
+  const [draggedTask, setDraggedTask] = useState<Task | null>(null);
+  const [dropTarget, setDropTarget] = useState<{ date: Date; hour: number } | null>(null);
+
+  // Delete task dialog
+  const [deleteTaskDialog, setDeleteTaskDialog] = useState<{ open: boolean; task: Task | null }>({
+    open: false,
+    task: null,
+  });
+  const [deleting, setDeleting] = useState(false);
 
   const [newEvent, setNewEvent] = useState({
     title: "",
@@ -111,31 +219,70 @@ export default function PlanningPage() {
     meetingUrl: "",
   });
 
-  // Fetch student info if studentId is provided
+  // Fetch student/mentor/professor info based on URL params
   useEffect(() => {
-    async function fetchStudentInfo() {
-      if (!studentIdParam) {
-        setStudentInfo(null);
-        return;
-      }
-      try {
-        const response = await fetch(`/api/students/${studentIdParam}`);
-        if (response.ok) {
-          const data = await response.json();
-          setStudentInfo({
-            id: data.student.id,
-            name: data.student.user.name,
-            email: data.student.user.email,
-          });
-          // Pre-fill studentId in new event form
-          setNewEvent(prev => ({ ...prev, studentId: studentIdParam }));
+    async function fetchUserInfo() {
+      // Reset all info
+      setStudentInfo(null);
+      setMentorInfo(null);
+      setProfessorInfo(null);
+
+      if (studentIdParam) {
+        try {
+          const response = await fetch(`/api/students/${studentIdParam}`);
+          if (response.ok) {
+            const data = await response.json();
+            setStudentInfo({
+              id: data.student.id,
+              name: data.student.user.name,
+              email: data.student.user.email,
+            });
+            setNewEvent(prev => ({ ...prev, studentId: studentIdParam }));
+          }
+        } catch (error) {
+          console.error("Error fetching student info:", error);
         }
-      } catch (error) {
-        console.error("Error fetching student info:", error);
+      } else if (mentorIdParam) {
+        try {
+          const response = await fetch(`/api/admin/team/mentors/${mentorIdParam}`);
+          if (response.ok) {
+            const data = await response.json();
+            const mentor = data.mentor;
+            setMentorInfo({
+              id: mentor.id,
+              userId: mentor.userId,
+              name: mentor.user.firstName && mentor.user.lastName
+                ? `${mentor.user.firstName} ${mentor.user.lastName}`
+                : mentor.user.name,
+              email: mentor.user.email,
+            });
+          }
+        } catch (error) {
+          console.error("Error fetching mentor info:", error);
+        }
+      } else if (professorIdParam) {
+        try {
+          const response = await fetch(`/api/admin/team/professors/${professorIdParam}`);
+          if (response.ok) {
+            const data = await response.json();
+            const professor = data.professor;
+            setProfessorInfo({
+              id: professor.id,
+              userId: professor.userId,
+              name: professor.user.firstName && professor.user.lastName
+                ? `${professor.user.firstName} ${professor.user.lastName}`
+                : professor.user.name,
+              email: professor.user.email,
+              type: professor.type,
+            });
+          }
+        } catch (error) {
+          console.error("Error fetching professor info:", error);
+        }
       }
     }
-    fetchStudentInfo();
-  }, [studentIdParam]);
+    fetchUserInfo();
+  }, [studentIdParam, mentorIdParam, professorIdParam]);
 
   // Get week dates
   const getWeekDates = (date: Date) => {
@@ -154,7 +301,6 @@ export default function PlanningPage() {
   const weekStart = weekDates[0];
   const weekEnd = weekDates[6];
 
-  // Stable string keys for dependencies
   const weekStartKey = weekStart.toISOString().split("T")[0];
   const weekEndKey = weekEnd.toISOString().split("T")[0];
 
@@ -171,6 +317,12 @@ export default function PlanningPage() {
       if (studentIdParam) {
         params.set("studentId", studentIdParam);
       }
+      if (mentorIdParam) {
+        params.set("mentorId", mentorIdParam);
+      }
+      if (professorIdParam) {
+        params.set("professorId", professorIdParam);
+      }
 
       const response = await fetch(`/api/calendar-events?${params.toString()}`);
       if (response.ok) {
@@ -182,11 +334,30 @@ export default function PlanningPage() {
     } finally {
       setLoading(false);
     }
-  }, [weekStartKey, weekEndKey, studentIdParam]);
+  }, [weekStartKey, weekEndKey, studentIdParam, mentorIdParam, professorIdParam]);
+
+  const fetchTasks = useCallback(async () => {
+    try {
+      const params = new URLSearchParams();
+      if (studentIdParam) {
+        params.set("studentId", studentIdParam);
+      }
+      params.set("completed", "false");
+
+      const response = await fetch(`/api/tasks?${params.toString()}`);
+      if (response.ok) {
+        const data = await response.json();
+        setTasks(data.tasks || []);
+      }
+    } catch (error) {
+      console.error("Error fetching tasks:", error);
+    }
+  }, [studentIdParam]);
 
   useEffect(() => {
     fetchEvents();
-  }, [fetchEvents]);
+    fetchTasks();
+  }, [fetchEvents, fetchTasks]);
 
   // Fetch students and professors for new event form
   useEffect(() => {
@@ -219,6 +390,17 @@ export default function PlanningPage() {
     fetchData();
   }, []);
 
+  // Scroll to current time on mount
+  useEffect(() => {
+    if (scrollContainerRef.current && viewMode === "week") {
+      const now = new Date();
+      const currentHour = now.getHours();
+      // Scroll to current hour minus 2 hours for context
+      const scrollPosition = Math.max(0, (currentHour - 2) * HOUR_HEIGHT);
+      scrollContainerRef.current.scrollTop = scrollPosition;
+    }
+  }, [viewMode, loading]);
+
   const navigateWeek = (direction: number) => {
     const newDate = new Date(currentDate);
     newDate.setDate(newDate.getDate() + direction * 7);
@@ -250,7 +432,7 @@ export default function PlanningPage() {
           startTime: "",
           endTime: "",
           eventType: "COURS_QUANT",
-          studentId: "",
+          studentId: studentIdParam || "",
           instructorId: "",
           meetingUrl: "",
         });
@@ -261,6 +443,103 @@ export default function PlanningPage() {
     } finally {
       setCreating(false);
     }
+  };
+
+  // Schedule a task on the calendar (creates a new schedule session)
+  const handleScheduleTask = async (task: Task, date: Date, hour: number) => {
+    try {
+      const scheduledFor = new Date(date);
+      scheduledFor.setHours(hour, 0, 0, 0);
+
+      const response = await fetch(`/api/tasks/${task.id}/schedules`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          scheduledFor: scheduledFor.toISOString(),
+        }),
+      });
+
+      if (response.ok) {
+        fetchTasks();
+      }
+    } catch (error) {
+      console.error("Error scheduling task:", error);
+    }
+  };
+
+  // Remove a scheduled session from the calendar
+  const handleUnscheduleTask = async (taskId: string, scheduleId: string) => {
+    try {
+      const response = await fetch(`/api/tasks/${taskId}/schedules/${scheduleId}`, {
+        method: "DELETE",
+      });
+
+      if (response.ok) {
+        fetchTasks();
+      }
+    } catch (error) {
+      console.error("Error unscheduling task:", error);
+    }
+  };
+
+  // Delete a task entirely
+  const handleDeleteTask = async () => {
+    if (!deleteTaskDialog.task) return;
+
+    setDeleting(true);
+    try {
+      const response = await fetch(`/api/tasks/${deleteTaskDialog.task.id}`, {
+        method: "DELETE",
+      });
+
+      if (response.ok) {
+        setDeleteTaskDialog({ open: false, task: null });
+        fetchTasks();
+      }
+    } catch (error) {
+      console.error("Error deleting task:", error);
+    } finally {
+      setDeleting(false);
+    }
+  };
+
+  // Mark a schedule session as completed
+  const handleCompleteSchedule = async (taskId: string, scheduleId: string, completed: boolean) => {
+    try {
+      const response = await fetch(`/api/tasks/${taskId}/schedules/${scheduleId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ completed }),
+      });
+
+      if (response.ok) {
+        fetchTasks();
+      }
+    } catch (error) {
+      console.error("Error completing schedule:", error);
+    }
+  };
+
+  // Drag handlers
+  const handleDragStart = (task: Task) => {
+    setDraggedTask(task);
+  };
+
+  const handleDragEnd = () => {
+    if (draggedTask && dropTarget) {
+      handleScheduleTask(draggedTask, dropTarget.date, dropTarget.hour);
+    }
+    setDraggedTask(null);
+    setDropTarget(null);
+  };
+
+  const handleDragOver = (e: React.DragEvent, date: Date, hour: number) => {
+    e.preventDefault();
+    setDropTarget({ date, hour });
+  };
+
+  const handleDragLeave = () => {
+    setDropTarget(null);
   };
 
   const getEventIcon = (eventType: string) => {
@@ -297,7 +576,6 @@ export default function PlanningPage() {
     }
   };
 
-  // Get events for a specific day
   const getEventsForDay = (date: Date) => {
     return events.filter((event) => {
       const eventDate = new Date(event.startTime);
@@ -309,6 +587,31 @@ export default function PlanningPage() {
     });
   };
 
+  // Get scheduled sessions for a specific day (returns task + schedule info)
+  const getScheduledSessionsForDay = (date: Date) => {
+    const sessions: Array<{ task: Task; schedule: TaskSchedule }> = [];
+
+    tasks.forEach((task) => {
+      task.schedules.forEach((schedule) => {
+        const scheduleDate = new Date(schedule.scheduledFor);
+        if (
+          scheduleDate.getFullYear() === date.getFullYear() &&
+          scheduleDate.getMonth() === date.getMonth() &&
+          scheduleDate.getDate() === date.getDate()
+        ) {
+          sessions.push({ task, schedule });
+        }
+      });
+    });
+
+    return sessions;
+  };
+
+  // Tasks can still be dragged even if they have schedules (for multi-session tasks)
+  const getUnscheduledTasks = () => {
+    return tasks.filter((task) => !task.completed);
+  };
+
   const isToday = (date: Date) => {
     const today = new Date();
     return (
@@ -318,35 +621,98 @@ export default function PlanningPage() {
     );
   };
 
-  const hours = Array.from({ length: 12 }, (_, i) => i + 8); // 8AM to 7PM
+  // Full day hours (0-23)
+  const hours = Array.from({ length: 24 }, (_, i) => i);
 
-  const breadcrumbs = studentInfo
-    ? [
-        { label: "Étudiants", href: "/students" },
+  // Build breadcrumbs and page info based on view type
+  const getBreadcrumbs = () => {
+    if (studentInfo) {
+      return [
+        { label: "Etudiants", href: "/students" },
         { label: studentInfo.name || studentInfo.email, href: `/students/${studentInfo.id}` },
         { label: "Planning" },
-      ]
-    : [{ label: "Planning" }];
+      ];
+    }
+    if (mentorInfo) {
+      return [
+        { label: "Admin" },
+        { label: "Equipe", href: "/admin/team" },
+        { label: mentorInfo.name || mentorInfo.email, href: `/admin/team/mentors/${mentorInfo.id}` },
+        { label: "Planning" },
+      ];
+    }
+    if (professorInfo) {
+      return [
+        { label: "Admin" },
+        { label: "Equipe", href: "/admin/team" },
+        { label: professorInfo.name || professorInfo.email, href: `/admin/team/professors/${professorInfo.id}` },
+        { label: "Planning" },
+      ];
+    }
+    return [{ label: "Planning" }];
+  };
+
+  const getPageTitle = () => {
+    if (studentInfo) {
+      return `Planning de ${studentInfo.name || studentInfo.email}`;
+    }
+    if (mentorInfo) {
+      return `Planning de ${mentorInfo.name || mentorInfo.email}`;
+    }
+    if (professorInfo) {
+      return `Planning de ${professorInfo.name || professorInfo.email}`;
+    }
+    return "Planning";
+  };
+
+  const getPageDescription = () => {
+    if (studentInfo) {
+      return "Cours et sessions de cet etudiant";
+    }
+    if (mentorInfo) {
+      return "Sessions et disponibilites de ce mentor";
+    }
+    if (professorInfo) {
+      return `Cours ${professorInfo.type === "QUANT" ? "Quantitatif" : "Verbal"} de ce professeur`;
+    }
+    return "Gerez les cours et sessions";
+  };
+
+  const getBackLink = () => {
+    if (studentInfo) {
+      return { href: `/students/${studentInfo.id}`, label: "Retour a la fiche" };
+    }
+    if (mentorInfo) {
+      return { href: `/admin/team/mentors/${mentorInfo.id}`, label: "Retour a la fiche" };
+    }
+    if (professorInfo) {
+      return { href: `/admin/team/professors/${professorInfo.id}`, label: "Retour a la fiche" };
+    }
+    return null;
+  };
+
+  const unscheduledTasks = getUnscheduledTasks();
+  const backLink = getBackLink();
 
   return (
     <>
       <PageHeader
-        title={studentInfo ? `Planning de ${studentInfo.name || studentInfo.email}` : "Planning"}
-        description={studentInfo ? "Cours et sessions de cet étudiant" : "Gérez les cours et sessions"}
-        breadcrumbs={breadcrumbs}
+        title={getPageTitle()}
+        description={getPageDescription()}
+        breadcrumbs={getBreadcrumbs()}
         actions={
           <div className="flex gap-2">
-            {studentInfo && (
+            {backLink && (
               <Button variant="outline" asChild>
-                <Link href={`/students/${studentInfo.id}`}>
+                <Link href={backLink.href}>
                   <ArrowLeft className="mr-2 h-4 w-4" />
-                  Retour à la fiche
+                  {backLink.label}
                 </Link>
               </Button>
             )}
             <Button onClick={() => setNewEventDialogOpen(true)}>
               <Plus className="mr-2 h-4 w-4" />
-              Nouvel événement
+              Nouvel evenement
             </Button>
           </div>
         }
@@ -392,97 +758,328 @@ export default function PlanningPage() {
           <Loader2 className="h-8 w-8 animate-spin text-performup-blue" />
         </div>
       ) : viewMode === "week" ? (
-        <Card>
-          <CardContent className="p-0">
-            <div className="overflow-x-auto">
-              <div className="min-w-[800px]">
-                {/* Header */}
-                <div className="grid grid-cols-8 border-b">
-                  <div className="p-3 text-center text-sm font-medium text-muted-foreground">
-                    Heure
-                  </div>
-                  {weekDates.map((date) => (
-                    <div
-                      key={date.toISOString()}
-                      className={`p-3 text-center border-l ${
-                        isToday(date) ? "bg-performup-blue/5" : ""
-                      }`}
-                    >
-                      <div className="text-sm text-muted-foreground">
-                        {formatDate(date, { weekday: "short" })}
-                      </div>
+        <div className="flex gap-4">
+          {/* Main Calendar */}
+          <Card className="flex-1">
+            <CardContent className="p-0">
+              <div className="flex flex-col">
+                {/* Sticky Header */}
+                <div className="sticky top-0 z-20 bg-background border-b">
+                  <div className="grid grid-cols-8 min-w-[900px]">
+                    <div className="p-3 text-center text-sm font-medium text-muted-foreground border-r w-16">
+                      Heure
+                    </div>
+                    {weekDates.map((date) => (
                       <div
-                        className={`text-lg font-semibold ${
-                          isToday(date) ? "text-performup-blue" : ""
+                        key={date.toISOString()}
+                        className={`p-3 text-center border-r last:border-r-0 ${
+                          isToday(date) ? "bg-performup-blue/5" : ""
                         }`}
                       >
-                        {date.getDate()}
+                        <div className="text-sm text-muted-foreground">
+                          {formatDate(date, { weekday: "short" })}
+                        </div>
+                        <div
+                          className={`text-lg font-semibold ${
+                            isToday(date) ? "text-performup-blue" : ""
+                          }`}
+                        >
+                          {date.getDate()}
+                        </div>
                       </div>
-                    </div>
-                  ))}
+                    ))}
+                  </div>
                 </div>
 
-                {/* Time grid */}
-                <div className="relative">
-                  {hours.map((hour) => (
-                    <div key={hour} className="grid grid-cols-8 border-b h-16">
-                      <div className="p-2 text-xs text-muted-foreground text-right pr-3">
-                        {hour}:00
+                {/* Scrollable Time Grid */}
+                <div
+                  ref={scrollContainerRef}
+                  className="overflow-y-auto overflow-x-auto"
+                  style={{ maxHeight: "calc(100vh - 320px)" }}
+                >
+                  <div className="relative min-w-[900px]">
+                    {hours.map((hour) => (
+                      <div key={hour} className="grid grid-cols-8" style={{ height: `${HOUR_HEIGHT}px` }}>
+                        <div className="p-2 text-xs text-muted-foreground text-right pr-3 border-r border-b w-16 flex-shrink-0">
+                          {hour.toString().padStart(2, "0")}:00
+                        </div>
+                        {weekDates.map((date) => {
+                          const dayEvents = getEventsForDay(date).filter((e) => {
+                            const eventHour = new Date(e.startTime).getHours();
+                            return eventHour === hour;
+                          });
+                          const daySessions = getScheduledSessionsForDay(date).filter(({ schedule }) => {
+                            const scheduleHour = new Date(schedule.scheduledFor).getHours();
+                            return scheduleHour === hour;
+                          });
+                          const isDropTarget =
+                            dropTarget &&
+                            dropTarget.date.toDateString() === date.toDateString() &&
+                            dropTarget.hour === hour;
+
+                          return (
+                            <div
+                              key={`${date.toISOString()}-${hour}`}
+                              className={`border-r border-b last:border-r-0 relative transition-colors ${
+                                isToday(date) ? "bg-performup-blue/5" : ""
+                              } ${isDropTarget ? "bg-performup-blue/20" : ""}`}
+                              onDragOver={(e) => handleDragOver(e, date, hour)}
+                              onDragLeave={handleDragLeave}
+                              onDrop={handleDragEnd}
+                            >
+                              {/* Events */}
+                              {dayEvents.map((event) => {
+                                const EventIcon = getEventIcon(event.eventType);
+                                const startMinutes = new Date(event.startTime).getMinutes();
+                                const duration =
+                                  (new Date(event.endTime).getTime() -
+                                    new Date(event.startTime).getTime()) /
+                                  (60 * 1000);
+                                const height = (duration / 60) * HOUR_HEIGHT;
+                                const top = (startMinutes / 60) * HOUR_HEIGHT;
+
+                                return (
+                                  <div
+                                    key={event.id}
+                                    className={`absolute left-1 right-1 p-1 rounded text-xs ${getEventColor(
+                                      event.eventType
+                                    )} overflow-hidden cursor-pointer hover:opacity-90 shadow-sm z-10`}
+                                    style={{
+                                      top: `${top}px`,
+                                      height: `${Math.max(height, 20)}px`,
+                                    }}
+                                  >
+                                    <div className="flex items-center gap-1 font-medium truncate">
+                                      <EventIcon className="h-3 w-3 flex-shrink-0" />
+                                      <span className="truncate">{event.title}</span>
+                                    </div>
+                                    {height > 30 && (
+                                      <div className="text-[10px] opacity-90 truncate">
+                                        {event.student.name}
+                                      </div>
+                                    )}
+                                  </div>
+                                );
+                              })}
+
+                              {/* Scheduled Task Sessions */}
+                              {daySessions.map(({ task, schedule }) => {
+                                const category = TASK_CATEGORIES[task.category as keyof typeof TASK_CATEGORIES] || TASK_CATEGORIES.GENERAL;
+                                const TaskIcon = category.icon;
+                                const startMinutes = new Date(schedule.scheduledFor).getMinutes();
+                                const height = (task.durationMinutes / 60) * HOUR_HEIGHT;
+                                const top = (startMinutes / 60) * HOUR_HEIGHT;
+
+                                return (
+                                  <div
+                                    key={schedule.id}
+                                    className={`absolute left-1 right-1 p-1 rounded text-xs ${category.color} text-white overflow-hidden shadow-sm z-10 border-2 border-dashed border-white/50 group ${
+                                      schedule.completed ? "opacity-60" : ""
+                                    }`}
+                                    style={{
+                                      top: `${top}px`,
+                                      height: `${Math.max(height, 20)}px`,
+                                    }}
+                                  >
+                                    <div className="flex items-center justify-between gap-1">
+                                      <div className="flex items-center gap-1 font-medium truncate flex-1 min-w-0">
+                                        <TaskIcon className="h-3 w-3 flex-shrink-0" />
+                                        <span className="truncate">{task.title}</span>
+                                        {task.scheduleCount > 1 && (
+                                          <span className="text-[10px] opacity-75">
+                                            ({task.schedules.findIndex(s => s.id === schedule.id) + 1}/{task.scheduleCount})
+                                          </span>
+                                        )}
+                                      </div>
+                                      <button
+                                        onClick={(e) => {
+                                          e.stopPropagation();
+                                          handleUnscheduleTask(task.id, schedule.id);
+                                        }}
+                                        className="opacity-0 group-hover:opacity-100 transition-opacity p-0.5 hover:bg-white/20 rounded"
+                                        title="Retirer du planning"
+                                      >
+                                        <X className="h-3 w-3" />
+                                      </button>
+                                    </div>
+                                    {height > 30 && (
+                                      <div className="flex items-center gap-1 mt-0.5">
+                                        <button
+                                          onClick={(e) => {
+                                            e.stopPropagation();
+                                            handleCompleteSchedule(task.id, schedule.id, !schedule.completed);
+                                          }}
+                                          className="p-0.5 hover:bg-white/20 rounded"
+                                          title={schedule.completed ? "Marquer non complete" : "Marquer complete"}
+                                        >
+                                          {schedule.completed ? (
+                                            <CheckCircle className="h-3 w-3" />
+                                          ) : (
+                                            <Circle className="h-3 w-3" />
+                                          )}
+                                        </button>
+                                        <span className="text-[10px] opacity-90 truncate">
+                                          {task.student.name || task.student.email}
+                                        </span>
+                                      </div>
+                                    )}
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          );
+                        })}
                       </div>
-                      {weekDates.map((date) => {
-                        const dayEvents = getEventsForDay(date).filter((e) => {
-                          const eventHour = new Date(e.startTime).getHours();
-                          return eventHour === hour;
-                        });
-                        return (
-                          <div
-                            key={`${date.toISOString()}-${hour}`}
-                            className={`border-l relative ${
-                              isToday(date) ? "bg-performup-blue/5" : ""
-                            }`}
-                          >
-                            {dayEvents.map((event) => {
-                              const EventIcon = getEventIcon(event.eventType);
-                              return (
-                                <div
-                                  key={event.id}
-                                  className={`absolute inset-x-1 top-1 p-1 rounded text-xs ${getEventColor(
-                                    event.eventType
-                                  )}`}
-                                  style={{
-                                    height: `${
-                                      ((new Date(event.endTime).getTime() -
-                                        new Date(event.startTime).getTime()) /
-                                        (60 * 60 * 1000)) *
-                                      64
-                                    }px`,
-                                  }}
-                                >
-                                  <div className="flex items-center gap-1 font-medium truncate">
-                                    <EventIcon className="h-3 w-3" />
-                                    {event.title}
-                                  </div>
-                                  <div className="text-[10px] opacity-90">
-                                    {event.student.name}
-                                  </div>
-                                </div>
-                              );
-                            })}
-                          </div>
-                        );
-                      })}
-                    </div>
-                  ))}
+                    ))}
+
+                    {/* Current time indicator */}
+                    {weekDates.some((d) => isToday(d)) && (
+                      <div
+                        className="absolute left-16 right-0 border-t-2 border-red-500 z-30 pointer-events-none"
+                        style={{
+                          top: `${
+                            (new Date().getHours() + new Date().getMinutes() / 60) * HOUR_HEIGHT
+                          }px`,
+                        }}
+                      >
+                        <div className="absolute -left-2 -top-1.5 w-3 h-3 rounded-full bg-red-500" />
+                      </div>
+                    )}
+                  </div>
                 </div>
               </div>
-            </div>
-          </CardContent>
-        </Card>
+            </CardContent>
+          </Card>
+
+          {/* Tasks Sidebar */}
+          <Card className="w-80 flex-shrink-0">
+            <CardHeader className="pb-2">
+              <div className="flex items-center justify-between">
+                <CardTitle className="text-sm font-medium flex items-center gap-2">
+                  <Target className="h-4 w-4" />
+                  Taches
+                  {unscheduledTasks.length > 0 && (
+                    <Badge variant="secondary" className="ml-1">
+                      {unscheduledTasks.length}
+                    </Badge>
+                  )}
+                </CardTitle>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="h-6 w-6"
+                  onClick={() => setTasksPanelExpanded(!tasksPanelExpanded)}
+                >
+                  {tasksPanelExpanded ? (
+                    <ChevronUp className="h-4 w-4" />
+                  ) : (
+                    <ChevronDown className="h-4 w-4" />
+                  )}
+                </Button>
+              </div>
+              <p className="text-xs text-muted-foreground">
+                Glissez-deposez sur le calendrier (plusieurs fois possible)
+              </p>
+            </CardHeader>
+            {tasksPanelExpanded && (
+              <CardContent className="p-2 max-h-[calc(100vh-400px)] overflow-y-auto">
+                {unscheduledTasks.length === 0 ? (
+                  <div className="text-center py-8 text-muted-foreground">
+                    <CheckCircle className="h-8 w-8 mx-auto mb-2 opacity-50" />
+                    <p className="text-sm">Aucune tache</p>
+                  </div>
+                ) : (
+                  <div className="space-y-2">
+                    {unscheduledTasks.map((task) => {
+                      const category =
+                        TASK_CATEGORIES[task.category as keyof typeof TASK_CATEGORIES] ||
+                        TASK_CATEGORIES.GENERAL;
+                      const TaskIcon = category.icon;
+
+                      return (
+                        <div
+                          key={task.id}
+                          draggable
+                          onDragStart={() => handleDragStart(task)}
+                          onDragEnd={handleDragEnd}
+                          className={`p-3 rounded-lg border cursor-move hover:shadow-md transition-shadow ${
+                            draggedTask?.id === task.id ? "opacity-50" : ""
+                          }`}
+                        >
+                          <div className="flex items-start gap-2">
+                            <GripVertical className="h-4 w-4 text-muted-foreground flex-shrink-0 mt-0.5" />
+                            <div className="flex-1 min-w-0">
+                              <div className="flex items-center justify-between gap-2">
+                                <div className="flex items-center gap-2 min-w-0">
+                                  <div
+                                    className={`p-1 rounded ${category.color} text-white flex-shrink-0`}
+                                  >
+                                    <TaskIcon className="h-3 w-3" />
+                                  </div>
+                                  <span className="font-medium text-sm truncate">
+                                    {task.title}
+                                  </span>
+                                </div>
+                                <DropdownMenu>
+                                  <DropdownMenuTrigger asChild>
+                                    <Button variant="ghost" size="icon" className="h-6 w-6 flex-shrink-0">
+                                      <MoreVertical className="h-3 w-3" />
+                                    </Button>
+                                  </DropdownMenuTrigger>
+                                  <DropdownMenuContent align="end">
+                                    <DropdownMenuItem
+                                      className="text-destructive"
+                                      onClick={() => setDeleteTaskDialog({ open: true, task })}
+                                    >
+                                      <Trash2 className="h-4 w-4 mr-2" />
+                                      Supprimer la tache
+                                    </DropdownMenuItem>
+                                  </DropdownMenuContent>
+                                </DropdownMenu>
+                              </div>
+                              <div className="flex items-center gap-2 mt-1 text-xs text-muted-foreground">
+                                <User className="h-3 w-3" />
+                                <span className="truncate">
+                                  {task.student.name || task.student.email}
+                                </span>
+                              </div>
+                              <div className="flex items-center gap-2 mt-1 flex-wrap">
+                                <Badge variant="outline" className="text-xs">
+                                  {category.label}
+                                </Badge>
+                                <span className="text-xs text-muted-foreground">
+                                  {task.durationMinutes} min
+                                </span>
+                                {task.scheduleCount > 0 && (
+                                  <Badge variant="secondary" className="text-xs">
+                                    <Repeat className="h-2.5 w-2.5 mr-1" />
+                                    {task.scheduleCount} session{task.scheduleCount > 1 ? "s" : ""}
+                                  </Badge>
+                                )}
+                              </div>
+                              {task.dueDate && (
+                                <div className="flex items-center gap-1 mt-1 text-xs text-muted-foreground">
+                                  <Clock className="h-3 w-3" />
+                                  Echeance: {formatDate(new Date(task.dueDate), { day: "numeric", month: "short" })}
+                                </div>
+                              )}
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </CardContent>
+            )}
+          </Card>
+        </div>
       ) : (
         <div className="space-y-4">
           {weekDates.map((date) => {
             const dayEvents = getEventsForDay(date);
-            if (dayEvents.length === 0) return null;
+            const daySessions = getScheduledSessionsForDay(date);
+            if (dayEvents.length === 0 && daySessions.length === 0) return null;
 
             return (
               <Card key={date.toISOString()}>
@@ -502,6 +1099,7 @@ export default function PlanningPage() {
                 </CardHeader>
                 <CardContent>
                   <div className="space-y-3">
+                    {/* Events */}
                     {dayEvents.map((event) => {
                       const EventIcon = getEventIcon(event.eventType);
                       const eventInfo =
@@ -561,16 +1159,88 @@ export default function PlanningPage() {
                         </div>
                       );
                     })}
+
+                    {/* Scheduled Task Sessions */}
+                    {daySessions.map(({ task, schedule }) => {
+                      const category =
+                        TASK_CATEGORIES[task.category as keyof typeof TASK_CATEGORIES] ||
+                        TASK_CATEGORIES.GENERAL;
+                      const TaskIcon = category.icon;
+                      return (
+                        <div
+                          key={schedule.id}
+                          className={`flex items-center gap-4 p-3 rounded-lg border border-dashed ${
+                            schedule.completed ? "opacity-60" : ""
+                          }`}
+                        >
+                          <div
+                            className={`flex h-10 w-10 items-center justify-center rounded-lg ${category.color} text-white`}
+                          >
+                            <TaskIcon className="h-5 w-5" />
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-center gap-2">
+                              <span className="font-medium">{task.title}</span>
+                              <Badge variant="outline" className="text-xs">
+                                Tache - {category.label}
+                              </Badge>
+                              {task.scheduleCount > 1 && (
+                                <Badge variant="secondary" className="text-xs">
+                                  Session {task.schedules.findIndex(s => s.id === schedule.id) + 1}/{task.scheduleCount}
+                                </Badge>
+                              )}
+                            </div>
+                            <div className="flex items-center gap-4 text-sm text-muted-foreground">
+                              <span className="flex items-center gap-1">
+                                <Clock className="h-3 w-3" />
+                                {formatDate(new Date(schedule.scheduledFor), {
+                                  hour: "2-digit",
+                                  minute: "2-digit",
+                                })}
+                                {" - "}
+                                {task.durationMinutes} min
+                              </span>
+                              <span className="flex items-center gap-1">
+                                <User className="h-3 w-3" />
+                                {task.student.name || task.student.email}
+                              </span>
+                            </div>
+                          </div>
+                          <div className="flex items-center gap-1">
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              onClick={() => handleCompleteSchedule(task.id, schedule.id, !schedule.completed)}
+                              title={schedule.completed ? "Marquer non complete" : "Marquer complete"}
+                            >
+                              {schedule.completed ? (
+                                <CheckCircle className="h-5 w-5 text-green-500" />
+                              ) : (
+                                <Circle className="h-5 w-5" />
+                              )}
+                            </Button>
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              onClick={() => handleUnscheduleTask(task.id, schedule.id)}
+                              title="Retirer du planning"
+                            >
+                              <X className="h-5 w-5" />
+                            </Button>
+                          </div>
+                        </div>
+                      );
+                    })}
                   </div>
                 </CardContent>
               </Card>
             );
           })}
-          {events.length === 0 && (
+          {events.length === 0 && tasks.every((t) => t.schedules.length === 0) && (
             <Card>
               <CardContent className="py-12 text-center">
                 <CalendarIcon className="h-12 w-12 mx-auto text-muted-foreground mb-4" />
-                <p className="text-muted-foreground">Aucun événement cette semaine</p>
+                <p className="text-muted-foreground">Aucun evenement cette semaine</p>
               </CardContent>
             </Card>
           )}
@@ -581,7 +1251,7 @@ export default function PlanningPage() {
       <Dialog open={newEventDialogOpen} onOpenChange={setNewEventDialogOpen}>
         <DialogContent className="max-w-lg">
           <DialogHeader>
-            <DialogTitle>Nouvel événement</DialogTitle>
+            <DialogTitle>Nouvel evenement</DialogTitle>
             <DialogDescription>
               Planifiez un nouveau cours ou session
             </DialogDescription>
@@ -601,7 +1271,7 @@ export default function PlanningPage() {
 
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2">
-                <Label htmlFor="startTime">Début *</Label>
+                <Label htmlFor="startTime">Debut *</Label>
                 <Input
                   id="startTime"
                   type="datetime-local"
@@ -625,7 +1295,7 @@ export default function PlanningPage() {
             </div>
 
             <div className="space-y-2">
-              <Label htmlFor="eventType">Type d&apos;événement *</Label>
+              <Label htmlFor="eventType">Type d&apos;evenement *</Label>
               <Select
                 value={newEvent.eventType}
                 onValueChange={(value) =>
@@ -646,7 +1316,7 @@ export default function PlanningPage() {
             </div>
 
             <div className="space-y-2">
-              <Label htmlFor="student">Étudiant *</Label>
+              <Label htmlFor="student">Etudiant *</Label>
               <Select
                 value={newEvent.studentId}
                 onValueChange={(value) =>
@@ -654,7 +1324,7 @@ export default function PlanningPage() {
                 }
               >
                 <SelectTrigger>
-                  <SelectValue placeholder="Sélectionner un étudiant" />
+                  <SelectValue placeholder="Selectionner un etudiant" />
                 </SelectTrigger>
                 <SelectContent>
                   {students.map((student) => (
@@ -675,7 +1345,7 @@ export default function PlanningPage() {
                 }
               >
                 <SelectTrigger>
-                  <SelectValue placeholder="Sélectionner un professeur" />
+                  <SelectValue placeholder="Selectionner un professeur" />
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="_none">Aucun</SelectItem>
@@ -689,7 +1359,7 @@ export default function PlanningPage() {
             </div>
 
             <div className="space-y-2">
-              <Label htmlFor="meetingUrl">Lien de réunion</Label>
+              <Label htmlFor="meetingUrl">Lien de reunion</Label>
               <Input
                 id="meetingUrl"
                 type="url"
@@ -716,11 +1386,47 @@ export default function PlanningPage() {
               }
             >
               {creating && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-              Créer
+              Creer
             </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* Delete Task Dialog */}
+      <AlertDialog
+        open={deleteTaskDialog.open}
+        onOpenChange={(open) => setDeleteTaskDialog({ open, task: open ? deleteTaskDialog.task : null })}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Supprimer cette tache ?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Cette action est irreversible. La tache &quot;{deleteTaskDialog.task?.title}&quot; sera
+              definitivement supprimee, ainsi que toutes ses planifications.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={deleting}>Annuler</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={handleDeleteTask}
+              disabled={deleting}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            >
+              {deleting ? (
+                <>
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  Suppression...
+                </>
+              ) : (
+                <>
+                  <Trash2 className="mr-2 h-4 w-4" />
+                  Supprimer
+                </>
+              )}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </>
   );
 }

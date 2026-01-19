@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -8,6 +8,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Badge } from "@/components/ui/badge";
+import { UserAvatar } from "@/components/ui/avatar";
 import {
   Select,
   SelectContent,
@@ -26,6 +27,7 @@ import {
   X,
   Building2,
   Loader2,
+  Camera,
 } from "lucide-react";
 
 // Types
@@ -79,6 +81,7 @@ interface FormData {
   nationality: string;
   currentFormation: string;
   linkedinUrl: string;
+  imageUrl: string;
   selectedSchools: { schoolId: string; programId: string; priority: number }[];
   selectedPacks: { packId: string; customPrice: number }[];
   mentorId: string;
@@ -94,6 +97,8 @@ export function OnboardingWizard() {
   const [loading, setLoading] = useState(false);
   const [dataLoading, setDataLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [uploadingImage, setUploadingImage] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   // Data from API
   const [mentors, setMentors] = useState<Mentor[]>([]);
@@ -111,6 +116,7 @@ export function OnboardingWizard() {
     nationality: "",
     currentFormation: "",
     linkedinUrl: "",
+    imageUrl: "",
     selectedSchools: [],
     selectedPacks: [],
     mentorId: "",
@@ -119,6 +125,45 @@ export function OnboardingWizard() {
     testType: "GMAT",
     internalNotes: "",
   });
+
+  // Handle image upload
+  const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    if (!file.type.startsWith("image/")) {
+      alert("Veuillez sélectionner une image");
+      return;
+    }
+    if (file.size > 5 * 1024 * 1024) {
+      alert("L'image ne doit pas dépasser 5MB");
+      return;
+    }
+
+    setUploadingImage(true);
+    try {
+      const uploadFormData = new FormData();
+      uploadFormData.append("file", file);
+      uploadFormData.append("folder", "profiles");
+
+      const res = await fetch("/api/upload", {
+        method: "POST",
+        body: uploadFormData,
+      });
+
+      if (res.ok) {
+        const { url } = await res.json();
+        updateFormData({ imageUrl: url });
+      }
+    } catch (err) {
+      console.error("Error uploading image:", err);
+    } finally {
+      setUploadingImage(false);
+      if (fileInputRef.current) {
+        fileInputRef.current.value = "";
+      }
+    }
+  };
 
   // Fetch data on mount
   useEffect(() => {
@@ -211,6 +256,7 @@ export function OnboardingWizard() {
             nationality: formData.nationality,
             currentFormation: formData.currentFormation,
             linkedinUrl: formData.linkedinUrl,
+            imageUrl: formData.imageUrl || null,
           },
           packs: formData.selectedPacks.map((p) => ({
             packId: p.packId,
@@ -379,6 +425,78 @@ export function OnboardingWizard() {
           {/* Step 1: Personal Info */}
           {step === 1 && (
             <div className="space-y-6">
+              {/* Profile Image Upload */}
+              <div className="flex flex-col items-center">
+                <Label className="mb-3">Photo de profil</Label>
+                <div className="relative group">
+                  {formData.imageUrl ? (
+                    <img
+                      src={formData.imageUrl}
+                      alt="Photo de profil"
+                      className="h-24 w-24 rounded-full object-cover border-4 border-background shadow-lg"
+                    />
+                  ) : (
+                    <UserAvatar
+                      name={formData.firstName || formData.lastName ? `${formData.firstName} ${formData.lastName}` : "?"}
+                      size="xl"
+                    />
+                  )}
+                  <div className="absolute inset-0 flex items-center justify-center rounded-full bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity">
+                    {uploadingImage ? (
+                      <Loader2 className="h-6 w-6 animate-spin text-white" />
+                    ) : (
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon"
+                        className="h-10 w-10 rounded-full text-white hover:bg-white/20"
+                        onClick={() => fileInputRef.current?.click()}
+                      >
+                        <Camera className="h-5 w-5" />
+                      </Button>
+                    )}
+                  </div>
+                  {formData.imageUrl && !uploadingImage && (
+                    <Button
+                      type="button"
+                      variant="destructive"
+                      size="icon"
+                      className="absolute -top-1 -right-1 h-6 w-6 rounded-full shadow-md"
+                      onClick={() => updateFormData({ imageUrl: "" })}
+                    >
+                      <X className="h-3 w-3" />
+                    </Button>
+                  )}
+                </div>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className="mt-3"
+                  onClick={() => fileInputRef.current?.click()}
+                  disabled={uploadingImage}
+                >
+                  {uploadingImage ? (
+                    <>
+                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                      Upload...
+                    </>
+                  ) : (
+                    <>
+                      <Camera className="mr-2 h-4 w-4" />
+                      {formData.imageUrl ? "Changer" : "Ajouter une photo"}
+                    </>
+                  )}
+                </Button>
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  accept="image/*"
+                  onChange={handleImageUpload}
+                  className="hidden"
+                />
+              </div>
+
               <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-2">
                   <Label htmlFor="firstName">Prénom *</Label>

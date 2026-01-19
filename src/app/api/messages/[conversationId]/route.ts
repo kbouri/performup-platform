@@ -266,13 +266,15 @@ export async function POST(
         `${(session.user as { firstName?: string }).firstName || ""} ${(session.user as { lastName?: string }).lastName || ""}`.trim() ||
         session.user.email;
 
+      const messagePreview = content ? (content.length > 50 ? content.substring(0, 50) + "..." : content) : "Pièce jointe";
+
       await prisma.notification.createMany({
         data: otherParticipants.map((p) => ({
           userId: p.userId,
           type: "NEW_MESSAGE",
-          title: "Nouveau message",
-          message: `${senderName}: ${content?.substring(0, 50)}${content?.length > 50 ? "..." : ""}`,
-          link: `/messages?id=${conversationId}`,
+          title: "💬 Nouveau message",
+          message: `${senderName}: ${messagePreview}`,
+          data: { conversationId, senderName },
         })),
       });
     }

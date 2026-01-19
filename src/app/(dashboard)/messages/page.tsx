@@ -273,15 +273,22 @@ export default function MessagesPage() {
 
       {/* Conversation Detail - 70% */}
       <div className="flex-1">
-        {conversationId && selectedConversation ? (
-          <ConversationDetail
-            conversationId={conversationId}
-            title={selectedConversation.title}
-            participants={selectedConversation.participants}
-            messages={messages}
-            onSendMessage={handleSendMessage}
-            isLoading={isLoadingMessages}
-          />
+        {conversationId ? (
+          selectedConversation ? (
+            <ConversationDetail
+              conversationId={conversationId}
+              title={selectedConversation.title}
+              participants={selectedConversation.participants}
+              messages={messages}
+              onSendMessage={handleSendMessage}
+              isLoading={isLoadingMessages}
+            />
+          ) : (
+            <div className="flex h-full flex-col items-center justify-center">
+              <div className="h-8 w-8 animate-spin rounded-full border-2 border-performup-blue border-t-transparent" />
+              <p className="mt-4 text-sm text-muted-foreground">Chargement de la conversation...</p>
+            </div>
+          )
         ) : (
           <div className="flex h-full flex-col items-center justify-center bg-muted/30">
             <div className="mb-4 rounded-full bg-muted p-6">

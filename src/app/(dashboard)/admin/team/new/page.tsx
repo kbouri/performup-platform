@@ -518,17 +518,17 @@ export default function NewCollaboratorPage() {
                   <div>
                     <Label>Chef Executif superviseur</Label>
                     <Select
-                      value={formData.executiveChefId}
+                      value={formData.executiveChefId || "none"}
                       onValueChange={(value) =>
-                        setFormData({ ...formData, executiveChefId: value })
+                        setFormData({ ...formData, executiveChefId: value === "none" ? "" : value })
                       }
                     >
                       <SelectTrigger>
                         <SelectValue placeholder="Selectionner (optionnel)" />
                       </SelectTrigger>
                       <SelectContent>
-                        <SelectItem value="">Aucun</SelectItem>
-                        {executiveChefs.map((chef) => (
+                        <SelectItem value="none">Aucun</SelectItem>
+                        {executiveChefs.filter((chef) => chef.id).map((chef) => (
                           <SelectItem key={chef.id} value={chef.id}>
                             {getChefName(chef)}
                           </SelectItem>

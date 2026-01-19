@@ -1,6 +1,7 @@
 "use client";
 
 import { Logo } from "./logo";
+import { NotificationDropdown } from "./notification-dropdown";
 import { Button, UserAvatar } from "@/components/ui";
 import {
   DropdownMenu,
@@ -10,7 +11,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { Bell, Menu, Settings, LogOut, User as UserIcon } from "lucide-react";
+import { Menu, Settings, LogOut, User as UserIcon } from "lucide-react";
 import { useSession, signOut } from "@/lib/auth-client";
 import { getRoleDisplayName } from "@/lib/utils";
 import Link from "next/link";
@@ -52,14 +53,7 @@ export function Header({ onMenuClick }: HeaderProps) {
       {/* Right side actions */}
       <div className="flex items-center gap-4">
         {/* Notifications */}
-        <Button variant="ghost" size="icon" className="relative">
-          <Bell className="h-5 w-5" />
-          {/* Notification badge */}
-          <span className="absolute -top-1 -right-1 flex h-4 w-4 items-center justify-center rounded-full bg-error text-[10px] font-bold text-white">
-            3
-          </span>
-          <span className="sr-only">Notifications</span>
-        </Button>
+        <NotificationDropdown />
 
         {/* User menu */}
         <DropdownMenu>

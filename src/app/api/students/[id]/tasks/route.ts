@@ -55,6 +55,12 @@ export async function POST(
         const body = await request.json();
         const { title, description, category, dueDate, timing, durationMinutes } = body;
 
+        // Get the student to find their userId for notification
+        const student = await prisma.student.findUnique({
+            where: { id },
+            select: { userId: true },
+        });
+
         const task = await prisma.task.create({
             data: {
                 studentId: id,
@@ -67,6 +73,25 @@ export async function POST(
                 createdBy: session.user.id
             }
         });
+
+        // Create notification for the student
+        if (student) {
+            const assignerName = session.user.name || session.user.email;
+            const dueDateFormatted = new Date(dueDate).toLocaleDateString("fr-FR", {
+                day: "numeric",
+                month: "long",
+            });
+
+            await prisma.notification.create({
+                data: {
+                    userId: student.userId,
+                    type: "TASK_ASSIGNED",
+                    title: "📋 Nouvelle tâche assignée",
+                    message: `"${title}" - À faire pour le ${dueDateFormatted}`,
+                    data: { taskId: task.id, taskTitle: title, assignedBy: assignerName },
+                },
+            });
+        }
 
         return NextResponse.json(task, { status: 201 });
     } catch (error) {

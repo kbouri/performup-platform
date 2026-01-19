@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { PageHeader } from "@/components/layout";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -40,6 +40,8 @@ import {
   Plus,
   Trash2,
   Building,
+  Camera,
+  X,
 } from "lucide-react";
 
 interface UserProfile {
@@ -82,6 +84,10 @@ export default function ProfilePage() {
     taskReminders: true,
   });
 
+  // Profile image state
+  const [uploadingImage, setUploadingImage] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
   // Bank accounts state
   const [bankAccounts, setBankAccounts] = useState<BankAccount[]>([]);
   const [loadingAccounts, setLoadingAccounts] = useState(false);
@@ -95,6 +101,80 @@ export default function ProfilePage() {
     iban: "",
     country: "",
   });
+
+  // Handle profile image upload
+  const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    // Validate file
+    if (!file.type.startsWith("image/")) {
+      alert("Veuillez sélectionner une image");
+      return;
+    }
+    if (file.size > 5 * 1024 * 1024) {
+      alert("L'image ne doit pas dépasser 5MB");
+      return;
+    }
+
+    setUploadingImage(true);
+    try {
+      // Upload to Vercel Blob
+      const formData = new FormData();
+      formData.append("file", file);
+      formData.append("folder", "profiles");
+
+      const uploadRes = await fetch("/api/upload", {
+        method: "POST",
+        body: formData,
+      });
+
+      if (!uploadRes.ok) {
+        throw new Error("Erreur lors de l'upload");
+      }
+
+      const { url } = await uploadRes.json();
+
+      // Update user profile with new image URL
+      const updateRes = await fetch("/api/profile/image", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ imageUrl: url }),
+      });
+
+      if (updateRes.ok) {
+        setUser((prev) => prev ? { ...prev, image: url } : null);
+      }
+    } catch (error) {
+      console.error("Error uploading image:", error);
+      alert("Erreur lors de l'upload de l'image");
+    } finally {
+      setUploadingImage(false);
+      if (fileInputRef.current) {
+        fileInputRef.current.value = "";
+      }
+    }
+  };
+
+  // Handle remove profile image
+  const handleRemoveImage = async () => {
+    if (!confirm("Supprimer votre photo de profil ?")) return;
+
+    setUploadingImage(true);
+    try {
+      const res = await fetch("/api/profile/image", {
+        method: "DELETE",
+      });
+
+      if (res.ok) {
+        setUser((prev) => prev ? { ...prev, image: null } : null);
+      }
+    } catch (error) {
+      console.error("Error removing image:", error);
+    } finally {
+      setUploadingImage(false);
+    }
+  };
 
   async function fetchBankAccounts() {
     setLoadingAccounts(true);
@@ -241,11 +321,80 @@ export default function ProfilePage() {
           <Card>
             <CardContent className="pt-6">
               <div className="flex flex-col items-center text-center">
-                <UserAvatar
-                  name={user.name || user.email}
-                  size="xl"
+                {/* Profile Image with Upload */}
+                <div className="relative mb-4 group">
+                  {user.image ? (
+                    <img
+                      src={user.image}
+                      alt={user.name || "Photo de profil"}
+                      className="h-24 w-24 rounded-full object-cover border-4 border-background shadow-lg"
+                    />
+                  ) : (
+                    <UserAvatar
+                      name={user.name || user.email}
+                      size="xl"
+                    />
+                  )}
+
+                  {/* Upload overlay */}
+                  <div className="absolute inset-0 flex items-center justify-center rounded-full bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity">
+                    {uploadingImage ? (
+                      <Loader2 className="h-6 w-6 animate-spin text-white" />
+                    ) : (
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-10 w-10 rounded-full text-white hover:bg-white/20"
+                        onClick={() => fileInputRef.current?.click()}
+                      >
+                        <Camera className="h-5 w-5" />
+                      </Button>
+                    )}
+                  </div>
+
+                  {/* Remove button */}
+                  {user.image && !uploadingImage && (
+                    <Button
+                      variant="destructive"
+                      size="icon"
+                      className="absolute -top-1 -right-1 h-6 w-6 rounded-full shadow-md"
+                      onClick={handleRemoveImage}
+                    >
+                      <X className="h-3 w-3" />
+                    </Button>
+                  )}
+
+                  {/* Hidden file input */}
+                  <input
+                    ref={fileInputRef}
+                    type="file"
+                    accept="image/*"
+                    onChange={handleImageUpload}
+                    className="hidden"
+                  />
+                </div>
+
+                {/* Change photo button */}
+                <Button
+                  variant="outline"
+                  size="sm"
                   className="mb-4"
-                />
+                  onClick={() => fileInputRef.current?.click()}
+                  disabled={uploadingImage}
+                >
+                  {uploadingImage ? (
+                    <>
+                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                      Upload...
+                    </>
+                  ) : (
+                    <>
+                      <Camera className="mr-2 h-4 w-4" />
+                      Changer la photo
+                    </>
+                  )}
+                </Button>
+
                 <h2 className="text-xl font-display font-semibold">
                   {user.name || user.email}
                 </h2>

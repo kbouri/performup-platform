@@ -312,6 +312,7 @@ export async function POST(request: NextRequest) {
           firstName: personalInfo.firstName,
           lastName: personalInfo.lastName,
           phone: personalInfo.phone,
+          image: personalInfo.imageUrl || null,
           role: "STUDENT",
           emailVerified: false,
           active: true,

@@ -494,17 +494,17 @@ export default function MentorProfilePage() {
                 <div className="space-y-2">
                   <Label htmlFor="executiveChef">Chef Executif</Label>
                   <Select
-                    value={editForm.executiveChefId}
+                    value={editForm.executiveChefId || "none"}
                     onValueChange={(value) =>
-                      setEditForm((prev) => ({ ...prev, executiveChefId: value }))
+                      setEditForm((prev) => ({ ...prev, executiveChefId: value === "none" ? "" : value }))
                     }
                   >
                     <SelectTrigger>
                       <SelectValue placeholder="Selectionner un chef executif" />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="">Aucun</SelectItem>
-                      {executiveChefs.map((chef) => (
+                      <SelectItem value="none">Aucun</SelectItem>
+                      {executiveChefs.filter((chef) => chef.id).map((chef) => (
                         <SelectItem key={chef.id} value={chef.id}>
                           {getUserName(chef.user)}
                         </SelectItem>

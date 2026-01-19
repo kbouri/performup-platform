@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect, useCallback } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { cn } from "@/lib/utils";
@@ -159,7 +159,6 @@ const mentorNavItems: NavItem[] = [
     title: "Messages",
     href: "/messages",
     icon: MessageSquare,
-    badge: 3,
   },
 ];
 
@@ -246,7 +245,6 @@ const studentNavItems: NavItem[] = [
     title: "Messages",
     href: "/messages",
     icon: MessageSquare,
-    badge: 2,
   },
 ];
 
@@ -259,24 +257,63 @@ interface SidebarProps {
 export function Sidebar({ userRole = "STUDENT", isOpen = true, onClose }: SidebarProps) {
   const pathname = usePathname();
   const [collapsed, setCollapsed] = useState(false);
+  const [unreadMessagesCount, setUnreadMessagesCount] = useState(0);
+
+  // Fetch unread messages count
+  const fetchUnreadMessages = useCallback(async () => {
+    try {
+      const response = await fetch("/api/messages?unreadOnly=true");
+      if (response.ok) {
+        const data = await response.json();
+        // Count total unread messages from all conversations
+        const totalUnread = data.conversations?.reduce(
+          (sum: number, conv: { unreadCount: number }) => sum + conv.unreadCount,
+          0
+        ) || 0;
+        setUnreadMessagesCount(totalUnread);
+      }
+    } catch (error) {
+      console.error("Error fetching unread messages:", error);
+    }
+  }, []);
+
+  // Fetch on mount and poll every 30 seconds
+  useEffect(() => {
+    fetchUnreadMessages();
+    const interval = setInterval(fetchUnreadMessages, 30000);
+    return () => clearInterval(interval);
+  }, [fetchUnreadMessages]);
 
   // Get nav items based on role
   const getNavItems = (): NavItem[] => {
+    let items: NavItem[];
     switch (userRole) {
       case "ADMIN":
-        return adminNavItems;
+        items = adminNavItems;
+        break;
       case "EXECUTIVE_CHEF":
-        return adminNavItems.filter(item => 
+        items = adminNavItems.filter(item =>
           !item.roles || item.roles.includes("EXECUTIVE_CHEF")
         );
+        break;
       case "MENTOR":
-        return mentorNavItems;
+        items = mentorNavItems;
+        break;
       case "PROFESSOR":
-        return professorNavItems;
+        items = professorNavItems;
+        break;
       case "STUDENT":
       default:
-        return studentNavItems;
+        items = studentNavItems;
     }
+
+    // Add dynamic badge for Messages
+    return items.map(item => {
+      if (item.href === "/messages" && unreadMessagesCount > 0) {
+        return { ...item, badge: unreadMessagesCount };
+      }
+      return item;
+    });
   };
 
   const navItems = getNavItems();

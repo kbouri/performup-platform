@@ -241,6 +241,7 @@ export async function POST(request: NextRequest) {
           include: {
             user: {
               select: {
+                id: true,
                 name: true,
                 email: true,
               },
@@ -251,6 +252,7 @@ export async function POST(request: NextRequest) {
           include: {
             user: {
               select: {
+                id: true,
                 name: true,
               },
             },
@@ -258,6 +260,49 @@ export async function POST(request: NextRequest) {
         },
       },
     });
+
+    // Create notification for the student
+    const eventDate = new Date(startTime).toLocaleDateString("fr-FR", {
+      day: "numeric",
+      month: "long",
+    });
+    const eventTime = new Date(startTime).toLocaleTimeString("fr-FR", {
+      hour: "2-digit",
+      minute: "2-digit",
+    });
+
+    const eventTypeLabels: Record<string, string> = {
+      MENTORING: "Mentorat",
+      TEST_BLANC: "Test blanc",
+      COURS_PRIVE: "Cours privé",
+      STAGE: "Stage",
+      REUNION: "Réunion",
+      AUTRE: "Événement",
+    };
+    const typeLabel = eventTypeLabels[eventType] || "Événement";
+
+    await prisma.notification.create({
+      data: {
+        userId: event.student.user.id,
+        type: "COURSE_REMINDER",
+        title: "📅 " + typeLabel + " planifié",
+        message: `"${title}" le ${eventDate} à ${eventTime}`,
+        data: { eventId: event.id, eventType, startTime },
+      },
+    });
+
+    // If there's an instructor, notify them too
+    if (event.instructor) {
+      await prisma.notification.create({
+        data: {
+          userId: event.instructor.user.id,
+          type: "COURSE_REMINDER",
+          title: "📅 " + typeLabel + " planifié",
+          message: `"${title}" avec ${event.student.user.name} le ${eventDate} à ${eventTime}`,
+          data: { eventId: event.id, eventType, startTime, studentName: event.student.user.name },
+        },
+      });
+    }
 
     return NextResponse.json(
       {
